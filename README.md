@@ -8,7 +8,7 @@
   <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=40&duration=3000&pause=5000&color=00C2FF&center=true&vCenter=true&width=500&height=70&lines=Hi+%F0%9F%91%8B%2C+I'm+Prajwal+M" alt="Typography Banner" />
 </div>
 
-<h3>Software Engineer | Systems Programming | Linux | AI Infrastructure</h3>
+<h3>System Software Engineer | Systems Programming | Linux | AI Infrastructure</h3>
 
 <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=700&size=24&pause=1200&color=00C2FF&center=true&vCenter=true&width=800&lines=Systems+Programming;Linux+Engineering;Distributed+Systems;Cloud+Infrastructure;AI+Infrastructure" alt="Typing SVG" />
 
