@@ -1,9 +1,0 @@
-kaggle_data/
-__pycache__/
-*.pyc
-venv/
-.venv/
-artifacts/
-*.pt
-*.pth
-*.ckpt
