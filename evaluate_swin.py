@@ -19,12 +19,12 @@ from sklearn.metrics import (
 
 sys.path.append(os.path.abspath("backend"))
 
-from ai_engine.models import VideoEvidenceAI
+from ai_engine.models import SwinTransformerBackend
 from ai_engine.dataset_loader import KaggleDeepfakeDataset, vit_transform
 
 
 DATASET = "backend/kaggle_data/merged_train_balanced"
-CHECKPOINT = "models_weights/vit_evidence_checkpoint.pth"
+CHECKPOINT = "models_weights/swin_evidence_checkpoint.pth"
 
 SEED = 42
 BATCH_SIZE = 4
@@ -39,7 +39,7 @@ def get_device():
 
 
 print("\n========================================")
-print("          ViT TEST EVALUATION")
+print("       SWIN TEST EVALUATION")
 print("========================================")
 
 random.seed(SEED)
@@ -50,10 +50,6 @@ device = get_device()
 print("Device:", device)
 print("Dataset:", DATASET)
 
-# ---------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------
-
 dataset = KaggleDeepfakeDataset(
     DATASET,
     transform=vit_transform
@@ -63,20 +59,10 @@ print("Total images:", len(dataset))
 
 labels = np.array(dataset.labels)
 
-print(
-    "Authentic:",
-    int(np.sum(labels == 1))
-)
+print("Authentic:", int(np.sum(labels == 1)))
+print("Fake:", int(np.sum(labels == 0)))
 
-print(
-    "Fake:",
-    int(np.sum(labels == 0))
-)
-
-# ---------------------------------------------------------
-# Reproduce deterministic 80/10/10 split
-# ---------------------------------------------------------
-
+# Same deterministic 80/10/10 split used by ViT/EfficientNet
 indices = list(range(len(dataset)))
 
 rng = random.Random(SEED)
@@ -98,10 +84,6 @@ print("Train:", len(train_indices))
 print("Validation:", len(val_indices))
 print("Test:", len(test_indices))
 
-# ---------------------------------------------------------
-# Test loader
-# ---------------------------------------------------------
-
 test_loader = DataLoader(
     test_dataset,
     batch_size=BATCH_SIZE,
@@ -109,20 +91,15 @@ test_loader = DataLoader(
     num_workers=0
 )
 
-# ---------------------------------------------------------
-# Model
-# ---------------------------------------------------------
+print("\nLoading Swin checkpoint...")
 
-print("\nLoading ViT checkpoint...")
-
-model = VideoEvidenceAI()
+model = SwinTransformerBackend()
 
 checkpoint = torch.load(
     CHECKPOINT,
     map_location="cpu"
 )
 
-# The training script saved only state_dict
 if isinstance(checkpoint, dict) and "model" in checkpoint:
     model.load_state_dict(checkpoint["model"])
 else:
@@ -132,10 +109,6 @@ model = model.to(device)
 model.eval()
 
 print("Checkpoint loaded successfully.")
-
-# ---------------------------------------------------------
-# Evaluation
-# ---------------------------------------------------------
 
 y_true = []
 y_pred = []
@@ -175,10 +148,6 @@ with torch.no_grad():
                 f"/{len(test_dataset)}"
             )
 
-# ---------------------------------------------------------
-# Metrics
-# ---------------------------------------------------------
-
 accuracy = accuracy_score(y_true, y_pred)
 
 precision = precision_score(
@@ -206,13 +175,9 @@ auc = roc_auc_score(
 
 cm = confusion_matrix(y_true, y_pred)
 
-# ---------------------------------------------------------
-# Results
-# ---------------------------------------------------------
-
 print("\n")
 print("========================================")
-print("          FINAL ViT TEST RESULTS")
+print("       FINAL SWIN TEST RESULTS")
 print("========================================")
 
 print(f"Accuracy : {accuracy * 100:.2f}%")

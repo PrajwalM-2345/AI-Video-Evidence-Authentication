@@ -19,12 +19,12 @@ from sklearn.metrics import (
 
 sys.path.append(os.path.abspath("backend"))
 
-from ai_engine.models import VideoEvidenceAI
+from ai_engine.models import EfficientNetBackend
 from ai_engine.dataset_loader import KaggleDeepfakeDataset, vit_transform
 
 
 DATASET = "backend/kaggle_data/merged_train_balanced"
-CHECKPOINT = "models_weights/vit_evidence_checkpoint.pth"
+CHECKPOINT = "models_weights/efficientnet_evidence_checkpoint.pth"
 
 SEED = 42
 BATCH_SIZE = 4
@@ -39,7 +39,7 @@ def get_device():
 
 
 print("\n========================================")
-print("          ViT TEST EVALUATION")
+print("     EFFICIENTNET TEST EVALUATION")
 print("========================================")
 
 random.seed(SEED)
@@ -50,10 +50,6 @@ device = get_device()
 print("Device:", device)
 print("Dataset:", DATASET)
 
-# ---------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------
-
 dataset = KaggleDeepfakeDataset(
     DATASET,
     transform=vit_transform
@@ -63,18 +59,11 @@ print("Total images:", len(dataset))
 
 labels = np.array(dataset.labels)
 
-print(
-    "Authentic:",
-    int(np.sum(labels == 1))
-)
-
-print(
-    "Fake:",
-    int(np.sum(labels == 0))
-)
+print("Authentic:", int(np.sum(labels == 1)))
+print("Fake:", int(np.sum(labels == 0)))
 
 # ---------------------------------------------------------
-# Reproduce deterministic 80/10/10 split
+# EXACT SAME 80/10/10 SPLIT AS ViT
 # ---------------------------------------------------------
 
 indices = list(range(len(dataset)))
@@ -98,10 +87,6 @@ print("Train:", len(train_indices))
 print("Validation:", len(val_indices))
 print("Test:", len(test_indices))
 
-# ---------------------------------------------------------
-# Test loader
-# ---------------------------------------------------------
-
 test_loader = DataLoader(
     test_dataset,
     batch_size=BATCH_SIZE,
@@ -110,19 +95,18 @@ test_loader = DataLoader(
 )
 
 # ---------------------------------------------------------
-# Model
+# MODEL
 # ---------------------------------------------------------
 
-print("\nLoading ViT checkpoint...")
+print("\nLoading EfficientNet checkpoint...")
 
-model = VideoEvidenceAI()
+model = EfficientNetBackend()
 
 checkpoint = torch.load(
     CHECKPOINT,
     map_location="cpu"
 )
 
-# The training script saved only state_dict
 if isinstance(checkpoint, dict) and "model" in checkpoint:
     model.load_state_dict(checkpoint["model"])
 else:
@@ -134,7 +118,7 @@ model.eval()
 print("Checkpoint loaded successfully.")
 
 # ---------------------------------------------------------
-# Evaluation
+# EVALUATION
 # ---------------------------------------------------------
 
 y_true = []
@@ -161,6 +145,7 @@ with torch.no_grad():
         # Label policy:
         # 0 = fake/tampered
         # 1 = authentic/original
+
         y_prob.extend(
             probabilities[:, 1]
             .cpu()
@@ -176,7 +161,7 @@ with torch.no_grad():
             )
 
 # ---------------------------------------------------------
-# Metrics
+# METRICS
 # ---------------------------------------------------------
 
 accuracy = accuracy_score(y_true, y_pred)
@@ -207,12 +192,12 @@ auc = roc_auc_score(
 cm = confusion_matrix(y_true, y_pred)
 
 # ---------------------------------------------------------
-# Results
+# RESULTS
 # ---------------------------------------------------------
 
 print("\n")
 print("========================================")
-print("          FINAL ViT TEST RESULTS")
+print("     FINAL EFFICIENTNET TEST RESULTS")
 print("========================================")
 
 print(f"Accuracy : {accuracy * 100:.2f}%")
@@ -225,6 +210,7 @@ print("\nConfusion Matrix:")
 print(cm)
 
 print("\nClassification Report:")
+
 print(
     classification_report(
         y_true,

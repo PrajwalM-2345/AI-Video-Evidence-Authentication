@@ -60,7 +60,7 @@ class AudioForensicEngine:
         )
 
         fake_prob = float(
-            probs[0][1] * 100
+            probs[0][0] * 100
         )
 
         return {

@@ -190,9 +190,9 @@ def train_all_models(data_directory, epochs=50, batch_size=32, learning_rate=1e-
 
 if __name__ == "__main__":
     train_all_models(
-        data_directory="backend/kaggle_data/merged_train",
+        data_directory="backend/kaggle_data/merged_train_balanced",
         epochs=15,
-        batch_size=8,
+        batch_size=4,
         learning_rate=5e-5,
-        models_to_train=("vit",)
+        models_to_train=("swin",)
     )

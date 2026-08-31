@@ -32,6 +32,7 @@ from datetime import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from ai_engine.models import VideoEvidenceAI, ForensicEnsembleEngine
+from ai_engine.video_inference import load_temporal_model, analyze_video
 from ai_engine.dataset_loader import vit_transform
 from ai_engine.face_analysis import ForensicFaceAnalyzer
 from ai_engine.tampering_localization import TamperingLocalizer
@@ -86,44 +87,37 @@ class DBFeedbackLog(Base):
 
 
 # --- Load models (module-level, runs once at import) ---
-print("⚡ Booting Hyper-Engine Core with Fine-Tuned Ensemble Base Components...")
+TEMPORAL_WEIGHTS_PATH = "models_weights/temporal_video_evidence_best.pth"
+temporal_video_model = None
+temporal_device = None
+if os.path.exists(TEMPORAL_WEIGHTS_PATH):
+    try:
+        temporal_video_model, temporal_device = load_temporal_model(TEMPORAL_WEIGHTS_PATH)
+        print(f"✅ Temporal video model loaded: {TEMPORAL_WEIGHTS_PATH} on {temporal_device}")
+    except Exception as e:
+        print(f"⚠️ Temporal video model unavailable: {e}")
+else:
+    print("⚠️ Temporal video checkpoint not found. Run train_video_temporal.py before video verification.")
+
+# Legacy models remain available for backward compatibility with existing reports/XAI.
 vit_baseline = VideoEvidenceAI()
 MODEL_WEIGHTS_PATH = "models_weights/vit_evidence_checkpoint.pth"
-
 if os.path.exists(MODEL_WEIGHTS_PATH):
     try:
-        vit_baseline.load_state_dict(
-            torch.load(MODEL_WEIGHTS_PATH, map_location=torch.device('cpu')),
-            strict=True,
-        )
-        print("🚀 Vision Transformer Weights Connected with Strict Verification Success!")
+        vit_baseline.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location="cpu"), strict=False)
     except Exception as e:
-        print(f"⚠️ Strict loading failed due to structural shifts: {e}")
-        print("Bypassing strict constraints for backward compatibility initialization...")
-        vit_baseline.load_state_dict(
-            torch.load(MODEL_WEIGHTS_PATH, map_location=torch.device('cpu')),
-            strict=False,
-        )
+        print(f"⚠️ Legacy ViT load skipped: {e}")
 
 EFF_WEIGHTS_PATH = "models_weights/efficientnet_evidence_checkpoint.pth"
 SWIN_WEIGHTS_PATH = "models_weights/swin_evidence_checkpoint.pth"
-print("=" * 60)
-print("🚀 Initializing Forensic Ensemble Engine")
-print("EfficientNet path:", EFF_WEIGHTS_PATH)
-print("Swin path:", SWIN_WEIGHTS_PATH)
-print("=" * 60)
-
-ai_model = ForensicEnsembleEngine(
-    vit_baseline,
-    eff_weights_path=EFF_WEIGHTS_PATH,
-    swin_weights_path=SWIN_WEIGHTS_PATH,
-)
-
-print("✅ Ensemble Engine Initialized Successfully")
-
-ai_model.eval()
-vit_baseline.eval()
-
+ai_model = None
+if os.path.exists(EFF_WEIGHTS_PATH) and os.path.exists(SWIN_WEIGHTS_PATH):
+    try:
+        ai_model = ForensicEnsembleEngine(vit_baseline, eff_weights_path=EFF_WEIGHTS_PATH, swin_weights_path=SWIN_WEIGHTS_PATH)
+        ai_model.eval()
+        print("✅ Legacy ensemble initialized")
+    except Exception as e:
+        print(f"⚠️ Legacy ensemble unavailable: {e}")
 
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, min_detection_confidence=0.5)
@@ -131,7 +125,7 @@ face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, min_
 
 face_analyzer = ForensicFaceAnalyzer()
 audio_ai = AudioForensicEngine()
-xai_localizer = TamperingLocalizer(ai_model.vit_core)
+xai_localizer = TamperingLocalizer(vit_baseline)
 
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -240,607 +234,107 @@ async def limit_upload_size(request: Request, call_next):
             return JSONResponse(status_code=413, content={"detail": "File too large"})
     return await call_next(request)
 
-async def run_audio_pipeline(
-    file_contents: bytes,
-    filename: str,
-    db,
-    case_id=None
-):
+async def run_audio_pipeline(file_contents: bytes, filename: str, db, case_id=None):
     import tempfile
-    import librosa
-
     file_hash = hashlib.sha256(file_contents).hexdigest()
-
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=os.path.splitext(filename)[1]
-    ) as temp_audio:
-
-        temp_audio.write(file_contents)
-        temp_path = temp_audio.name
-
+    suffix=os.path.splitext(filename)[1] or ".wav"
+    with tempfile.NamedTemporaryFile(delete=False,suffix=suffix) as f:
+        f.write(file_contents); temp_path=f.name
     try:
-        audio, sr = librosa.load(
-            temp_path,
-            sr=16000
-        )
-        audio_timeline = []
-        segment_size = int(sr * 0.25)
-        for i in range(0, len(audio), segment_size):
-
-            segment = audio[i:i + segment_size]
-            if len(segment) < 8000:
-                continue
-            start_time = round(i / sr, 2)
-
-            result = audio_ai.predict_segment(
-                segment
-            )
-
-            score = result["deepfake_probability"]
-
-            status = result["verdict"]
-
-            audio_timeline.append({
-                "timestamp": f"{start_time}s",
-                "tampering_probability": score,
-                "status": status
-            })
-        duration = librosa.get_duration(
-            y=audio,
-            sr=sr
-        )
-        overall_score = max(
-            [x["tampering_probability"] for x in audio_timeline],
-            default=0
-        )
-        risk_score = round(overall_score, 2)
-
-        if risk_score >= 90:
-            risk_level = "CRITICAL"
-        elif risk_score >= 75:
-            risk_level = "HIGH"
-        elif risk_score >= 50:
-            risk_level = "MEDIUM"
-        else:
-            risk_level = "LOW"
-        overall_verdict = (
-            "Tampered"
-            if overall_score > 70
-            else "Original"
-        )
-        waveform_points = []
-        step = max(1, len(audio) // 500)
-
-        for i in range(0, len(audio), step):
-            waveform_points.append(
-                round(float(audio[i]), 4)
-            )
+        audio,sr=librosa.load(temp_path,sr=16000,mono=True)
+        duration=float(len(audio)/sr)
+        segment_size=int(sr*1.0); hop=int(sr*0.5)
+        timeline=[]
+        for i in range(0,max(1,len(audio)-segment_size+1),hop):
+            seg=audio[i:i+segment_size]
+            if len(seg)<sr*0.5: continue
+            r=audio_ai.predict_segment(seg)
+            p=float(r["deepfake_probability"])/100.0
+            timeline.append({"timestamp":f"{i/sr:.2f}s","timestamp_seconds":round(i/sr,3),"tampering_probability":round(p*100,2),"status":"Tampered" if p>=0.60 else "Original"})
+        vals=np.array([x["tampering_probability"]/100 for x in timeline],dtype=np.float32)
+        robust=float(np.percentile(vals,75)) if len(vals) else 0.0
+        suspicious=[x for x in timeline if x["tampering_probability"]>=60]
+        # Require persistence; one noisy audio segment must not condemn the file.
+        persistent=sum(1 for a,b in zip(suspicious,suspicious[1:]) if b["timestamp_seconds"]-a["timestamp_seconds"]<=1.1)+ (1 if suspicious else 0)
+        if persistent<2: robust=min(robust,0.49)
+        verdict="Tampered" if robust>=0.60 else "Original"
+        confidence=robust*100 if verdict=="Tampered" else (1-robust)*100
+        waveform=[round(float(x),4) for x in audio[::max(1,len(audio)//500)]]
+        payload={"hash_verification":{"sha256_hash":file_hash},"media_type":"audio","verdict":verdict,"confidence":round(confidence,2),"risk_score":round(robust*100,2),"audio_timeline":timeline,"timeline":timeline,"waveform_points":waveform,"sample_rate":sr,"duration_seconds":round(duration,2),"total_samples":len(audio),"label_policy":"0=spoof/tampered, 1=bonafide/authentic","model":"AASIST"}
         try:
-            existing_video = db.query(DBVideoRecord).filter(
-                DBVideoRecord.file_hash == file_hash
-            ).first()
-
+            existing_video=db.query(DBVideoRecord).filter(DBVideoRecord.file_hash==file_hash).first()
             if not existing_video:
-                db.add(DBVideoRecord(
-                    file_hash=file_hash,
-                    filename=filename,
-                    file_path=temp_path,
-                    file_size_bytes=len(file_contents),
-                ))
-                db.flush()
-
-            existing_report = db.query(DBForensicReport).filter(
-                DBForensicReport.file_hash == file_hash
-            ).first()
-
-            try:
-                blockchain_receipt = blockchain_client.register_video_evidence(
-                    file_hash=file_hash,
-                    source_type="audio",
-                    frame_size="N/A",
-                    fps=0.0,
-                    compression_profile="AASIST",
-                    confidence_score=round(overall_score, 2),
-                )
-            except Exception:
-                blockchain_receipt = {
-                    "status": "Fallback Offline Engine Mode",
-                    "transaction_hash": "0x" + "0" * 64,
-                    "block_number": 0,
-                    "gas_used": 0,
-                }
-
-            tx_hash = blockchain_receipt.get("transaction_hash")
-
-            is_anchored = (
-                tx_hash is not None
-                and tx_hash != ""
-                and tx_hash != "0x" + "0" * 64
-            )
-
-            audio_db_pack = {
-                "media_type": "audio",
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "audio_timeline": audio_timeline,
-                "waveform_points": waveform_points
-            }
-
-            if existing_report:
-                existing_report.case_id = case_id
-                existing_report.verdict = overall_verdict
-                existing_report.confidence_score = round(overall_score, 2)
-                existing_report.timeline_json = audio_db_pack
-                existing_report.blockchain_tx_hash = blockchain_receipt.get("transaction_hash")
-                existing_report.block_number = blockchain_receipt.get("block_number")
-                existing_report.gas_used = blockchain_receipt.get("gas_used")
-                existing_report.is_anchored = is_anchored
-
-            else : 
-                db.add(DBForensicReport(
-                    file_hash=file_hash,
-                    case_id=case_id,
-                    verdict=overall_verdict,
-                    confidence_score=round(overall_score, 2),
-                    timeline_json=audio_db_pack,
-                    device_type="Audio",
-                    compression_profile="AASIST",
-                    blockchain_tx_hash=blockchain_receipt.get("transaction_hash"),
-                    block_number=blockchain_receipt.get("block_number"),
-                    gas_used=blockchain_receipt.get("gas_used"),
-                    is_anchored=is_anchored,
-            ))
-
-            db.commit()
-
+                db.add(DBVideoRecord(file_hash=file_hash,filename=filename,file_path=temp_path,file_size_bytes=len(file_contents))); db.flush()
+            receipt=blockchain_client.register_video_evidence(file_hash=file_hash,source_type="audio",frame_size="N/A",fps=0.0,compression_profile="AASIST",confidence_score=round(confidence,2))
+            anchored=bool(receipt.get("transaction_hash")) and receipt.get("transaction_hash")!="0x"+"0"*64
+            report=db.query(DBForensicReport).filter(DBForensicReport.file_hash==file_hash).first()
+            pack={"media_type":"audio","audio_timeline":timeline,"timeline":timeline,"sample_rate":sr,"duration_seconds":duration,"total_samples":len(audio)}
+            if report:
+                report.case_id=case_id; report.verdict=verdict; report.confidence_score=round(confidence,2); report.timeline_json=pack; report.blockchain_tx_hash=receipt.get("transaction_hash"); report.block_number=receipt.get("block_number"); report.gas_used=receipt.get("gas_used"); report.is_anchored=anchored
+            else:
+                db.add(DBForensicReport(file_hash=file_hash,case_id=case_id,verdict=verdict,confidence_score=round(confidence,2),timeline_json=pack,device_type="Audio",compression_profile="AASIST",blockchain_tx_hash=receipt.get("transaction_hash"),block_number=receipt.get("block_number"),gas_used=receipt.get("gas_used"),is_anchored=anchored))
+            db.add(DBAuditLog(action="AUDIO_FORENSIC_RUN",file_hash=file_hash,details=f"AASIST audio analysis. Verdict={verdict}; confidence={confidence:.2f}%")); db.commit()
         except Exception as e:
-            db.rollback()
-            print("[AUDIO DB ERROR]", e)
-
-        return {
-            "hash_verification": {
-                "sha256_hash": file_hash
-            },
-            "media_type": "audio",
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "verdict": overall_verdict,
-            "confidence": round(overall_score, 2),
-            "audio_timeline": audio_timeline,
-            "filename": filename,
-            "sample_rate": sr,
-            "duration_seconds": round(duration, 2),
-            "total_samples": len(audio),
-            "waveform_points": waveform_points,
-            "status": "Audio Analysis Successful"
-        }
-
+            db.rollback(); print("[AUDIO DB ERROR]",e)
+        return payload
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        if os.path.exists(temp_path): os.remove(temp_path)
 
-# --- Core pipeline ---
+
 async def run_forensic_pipeline(file_contents: bytes, filename: str, db: Session, case_id: str = None):
-    VIDEO_EXTS = ('.mp4', '.avi', '.mov', '.mkv')
-    AUDIO_EXTS = ('.wav', '.mp3', '.flac', '.m4a')
+    VIDEO_EXTS=(".mp4",".avi",".mov",".mkv",".webm")
+    AUDIO_EXTS=(".wav",".mp3",".flac",".m4a")
+    lower=filename.lower()
+    if not lower.endswith(VIDEO_EXTS+AUDIO_EXTS):
+        raise HTTPException(status_code=400,detail="Unsupported media format.")
+    if lower.endswith(AUDIO_EXTS):
+        return await run_audio_pipeline(file_contents,filename,db,case_id)
+    if temporal_video_model is None:
+        raise HTTPException(status_code=503,detail="Temporal video model is not trained. Run: python train_video_temporal.py")
 
-    if not filename.lower().endswith(
-        VIDEO_EXTS + AUDIO_EXTS
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported media format."
-        )
+    file_hash=hashlib.sha256(file_contents).hexdigest()
+    os.makedirs("cloud_storage",exist_ok=True)
+    orig_path=f"cloud_storage/{file_hash}_original{os.path.splitext(filename)[1].lower()}"
+    processed_path=f"cloud_storage/{file_hash}_processed{os.path.splitext(filename)[1].lower()}"
+    with open(orig_path,"wb") as f: f.write(file_contents)
+    # Keep an exact byte-identical processed copy until an evidence overlay is requested.
+    with open(processed_path,"wb") as f: f.write(file_contents)
 
-    file_hash = hashlib.sha256(file_contents).hexdigest()
-    mock_redis_cache.clear()
-    if file_hash in mock_redis_cache:
-        print(f"🚀 [CACHE HIT] Returning instant telemetry packet for hash: {file_hash}")
-        try:
-            db.add(DBAuditLog(
-                action="REDIS_CACHE_HIT",
-                file_hash=file_hash,
-                details="Instant verification payload served from cache repository.",
-            ))
-            db.commit()
-        except Exception:
-            db.rollback()
-        return mock_redis_cache[file_hash]
-
-    os.makedirs("cloud_storage", exist_ok=True)
-
-    orig_save_path = f"cloud_storage/{file_hash}_original.mp4"
-    processed_save_path = f"cloud_storage/{file_hash}_processed.mp4" # Renamed for accuracy
-    temp_path = f"cloud_storage/temp_{file_hash}_{filename}"
-
-    with open(temp_path, "wb") as f:
-        f.write(file_contents)
-    VIDEO_EXTS = ('.mp4', '.avi', '.mov', '.mkv')
-    AUDIO_EXTS = ('.wav', '.mp3', '.flac', '.m4a')
-
-    is_video = filename.lower().endswith(VIDEO_EXTS)
-    is_audio = filename.lower().endswith(AUDIO_EXTS)
-
-    with open(orig_save_path, "wb") as f:
-        f.write(file_contents)
-
-    file_size = len(file_contents)
-
-    if is_audio:
-        return await run_audio_pipeline(
-            file_contents,
-            filename,
-            db,
-            case_id
-        )
-
-    cap = cv2.VideoCapture(temp_path)
-    if not cap.isOpened():
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise HTTPException(status_code=400, detail="Failed to parse video container streams.")
-
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS) if cap.get(cv2.CAP_PROP_FPS) > 0 else 25.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(processed_save_path, fourcc, fps, (width, height))
-
-    if fps <= 15.0:
-        source_estimation = "Fixed CCTV / Closed-Circuit Surveillance System"
-        target_benchmark = "ForgeryNet (Multi-scenario/Security Profiles)"
-    elif width >= 1920:
-        source_estimation = "High-Definition Mobile Device / High-Quality Dataset Profile"
-        target_benchmark = "Celeb-DF v2 (HQ Synthetics)"
-    else:
-        source_estimation = "Standard Webcam / Compressed Stream Network"
-        target_benchmark = "FaceForensics++ (Multi-compression Tier)"
-
-    sample_interval = max(1, total_frames // 15)
-    timeline_records = []
-    tampered_frames_gallery = []
-    highest_fake_prob = 0.0
-    total_face_detections = 0
-
-    last_verdict = "Original"
-    last_prob = 0.0
-
-    # ========================================================================
-    # HYBRID CALIBRATION MATRIX (UNIFIED FOR ALL MATRIX TYPES)
-    # ========================================================================
-    # FLIPPED to 0: Ensure we pull the correct probability index for Tampered!
-    # Class 0 = Original
-    # Class 1 = Tampered
-
-    FAKE_CLASS_INDEX = 1
-    ASSUME_CROP_IS_RGB = False
-    SENSITIVITY_THRESHOLD = 0.45
-
-    for frame_idx in range(total_frames):
-        ret, current_frame = cap.read()
-        if not ret or current_frame is None:
-            break
-
-        raw_ai_frame = current_frame.copy()
-
-        try:
-            lab = cv2.cvtColor(current_frame, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            cl = clahe.apply(l)
-            enhanced_lab = cv2.merge((cl, a, b))
-            enhanced_frame = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-            processed_frame = sharpen_image(enhanced_frame)
-        except Exception:
-            processed_frame = current_frame.copy()
-
-        if frame_idx % sample_interval == 0:
-            timestamp_seconds = round(frame_idx / fps, 2)
-
-            rgb_raw_frame = cv2.cvtColor(raw_ai_frame, cv2.COLOR_BGR2RGB)
-            mp_results = face_mesh.process(rgb_raw_frame)
-            if mp_results.multi_face_landmarks:
-                total_face_detections += 1
-
-            face_crop, _ = face_analyzer.extract_and_align_face(raw_ai_frame)
-            use_crop = (
-                face_crop is not None and
-                face_crop.size > 0 and
-                face_crop.shape[0] >= 128 and
-                face_crop.shape[1] >= 128
-            )
-
-            if use_crop:
-                eval_image = face_crop
-                if ASSUME_CROP_IS_RGB:
-                    pil_img = Image.fromarray(eval_image).convert("RGB").resize((224, 224))
-                else:
-                    pil_img = Image.fromarray(cv2.cvtColor(eval_image, cv2.COLOR_BGR2RGB)).resize((224, 224))
-            else:
-                # Fallback to square center crop to minimize wide background canvas noise
-                h, w, _ = raw_ai_frame.shape
-                min_dim = min(h, w)
-                start_y = (h - min_dim) // 2
-                start_x = (w - min_dim) // 2
-                eval_image = raw_ai_frame[start_y:start_y+min_dim, start_x:start_x+min_dim]
-                pil_img = Image.fromarray(cv2.cvtColor(eval_image, cv2.COLOR_BGR2RGB)).resize((224, 224))
-
-            input_tensor = vit_transform(pil_img).unsqueeze(0)
-
-            with torch.no_grad():
-                output = ai_model(input_tensor)
-                probabilities = output.flatten().tolist()
-                pred = torch.argmax(output, dim=1).item()
-
-            print("Prediction Index:", pred)
-            print("Probabilities:", probabilities)
-
-            if len(probabilities) < 2:
-                raise HTTPException(status_code=500, detail="Model output does not contain 2 classes.")
-
-            fake_p = probabilities[0]
-            orig_p = probabilities[1]
-
-            frame_fake_p = fake_p
-            print(
-                f"[FORENSIC DEBUG] Original={orig_p:.4f} "
-                f"Tampered={fake_p:.4f}"
-            )
-            # 🛡️ THE FORENSIC EDGE VARIANCE LAYER (Balances AI model blind spots)
-            try:
-                gray_eval = cv2.cvtColor(eval_image, cv2.COLOR_BGR2GRAY)
-                edge_variance = float(cv2.Laplacian(gray_eval, cv2.CV_64F).var())
-            except Exception:
-                edge_variance = 100.0
-
-            # if edge_variance > 2500.0:
-            #     # Artificial digital noise block caught (Synthetic Forgery Match)
-            #     frame_fake_p = max(frame_fake_p, 0.95)
-            if edge_variance < 15.0 and not use_crop:
-                # Pure flat geometric background with zero human features - drop noise spikes
-                frame_fake_p = min(frame_fake_p, 0.15)
-
-            if frame_idx == 0:
-                print("\n🔬 [CORE TELEMETRY DIAGNOSTIC LOG - FRAME 0]")
-                print(f"-> Ensemble Probabilities: {probabilities}")
-                print(f"-> Softmax Map -> Index [0]: {round(orig_p * 100, 2)}% | Index [1]: {round(fake_p * 100, 2)}%")
-                print(f"-> Edge Structural Variance Score: {round(edge_variance, 2)}")
-                print(f"-> Calibrated Output Threat Metric: {round(frame_fake_p * 100, 2)}%\n")
-
-            if frame_fake_p >= SENSITIVITY_THRESHOLD:
-                last_verdict = "Tampered"
-            else:
-                last_verdict = "Original"
-
-            last_prob = frame_fake_p
-            highest_fake_prob = max(highest_fake_prob, frame_fake_p)
-
-            timeline_records.append({
-                "frame_number": frame_idx,
-                "timestamp": f"{timestamp_seconds}s",
-                "tampering_probability": round(frame_fake_p * 100, 2),
-                "status": last_verdict,
-            })
-
-            if last_verdict == "Tampered" and len(tampered_frames_gallery) < 10:
-                _, thumb_buf = cv2.imencode('.jpg', cv2.resize(eval_image, (240, 240)))
-                local_orig_b64 = base64.b64encode(thumb_buf.tobytes()).decode('utf-8')
-
-                try:
-                    local_pil = Image.fromarray(cv2.cvtColor(eval_image, cv2.COLOR_BGR2RGB)).resize((224, 224))
-                    local_tensor = vit_transform(local_pil).unsqueeze(0)
-                    local_heatmap = xai_localizer.generate_heatmap(local_tensor, cv2.resize(eval_image, (240, 240)))
-                    _, local_heat_buf = cv2.imencode('.jpg', local_heatmap)
-                    local_heat_b64 = base64.b64encode(local_heat_buf.tobytes()).decode('utf-8')
-                except Exception:
-                    local_heat_b64 = local_orig_b64
-
-                tampered_frames_gallery.append({
-                    "frame_id": frame_idx,
-                    "timestamp": f"{timestamp_seconds}s",
-                    "confidence": round(frame_fake_p * 100, 2),
-                    "thumbnail_b64": local_orig_b64,
-                    "original_frame_b64": local_orig_b64,
-                    "heatmap_frame_b64": local_heat_b64,
-                })
-
-        if last_verdict == "Tampered":
-            cv2.rectangle(processed_frame, (10, 10), (width - 10, height - 10), (0, 0, 255), 4)
-            cv2.putText(
-                processed_frame,
-                f"AI TAMPER DETECTED ({round(last_prob * 100, 1)}%)",
-                (30, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 0, 255),
-                2,
-            )
-        else:
-            cv2.rectangle(processed_frame, (10, 10), (width - 10, height - 10), (0, 255, 0), 4)
-            cv2.putText(
-                processed_frame,
-                "VERIFIED AUTHENTIC",
-                (30, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 255, 0),
-                2,
-            )
-
-        video_writer.write(processed_frame)
-
-    cap.release()
-    video_writer.release()
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-
-    tampered_count = sum(1 for item in timeline_records if item["status"] == "Tampered")
-    total_evaluated = len(timeline_records) if len(timeline_records) > 0 else 1
-    tamper_ratio = tampered_count / total_evaluated
-    tamper_ratio_percent = round(tamper_ratio * 100, 2)
-
-    if tampered_count == 0 or (tamper_ratio_percent < 8.0 and highest_fake_prob < 0.85):
-        ai_verdict = "Authentic Match"
-        global_confidence = round((1.0 - highest_fake_prob) * 100, 2) if tampered_count > 0 else 100.0
-        manipulation_type = "None / Secure Container State"
-        risk_score = 0.0
-    else:
-        ai_verdict = "Synthetic/Deepfake Tampering Detected"
-        global_confidence = round(highest_fake_prob * 100, 2)
-        risk_score = global_confidence
-
-        if total_face_detections > 0:
-            if tamper_ratio > 0.5:
-                manipulation_type = "Face Swap"
-            elif tamper_ratio > 0.25:
-                manipulation_type = "Lip Sync"
-            else:
-                manipulation_type = "AI Face Inpainting"
-        else:
-            if total_frames > 150 and tamper_ratio < 0.20:
-                manipulation_type = "Micro-Splicing / Targeted Frame Editing"
-            elif tamper_ratio > 0.3:
-                manipulation_type = "Frame Insertion"
-            else:
-                manipulation_type = "Traditional Video Editing"
-
+    result=analyze_video(orig_path,temporal_video_model,temporal_device,samples=48,threshold=0.65)
+    timeline=result["timeline"]
+    intervals=result["tampering_intervals"]
+    verdict=result["verdict"]
+    confidence=result["confidence"]
+    info=result["video_info"]
     try:
-        blockchain_receipt = blockchain_client.register_video_evidence(
-            file_hash=file_hash,
-            source_type=source_estimation,
-            frame_size=f"{width}x{height}",
-            fps=round(fps, 2),
-            compression_profile=manipulation_type,
-            confidence_score=global_confidence,
-        )
-
-        print("\n✅ BLOCKCHAIN SUCCESS")
-        print(blockchain_receipt)
-
+        receipt=blockchain_client.register_video_evidence(file_hash=file_hash,source_type="Temporal AI Video Forensics",frame_size=f"{info['width']}x{info['height']}",fps=info["fps"],compression_profile="Temporal Transformer",confidence_score=confidence)
     except Exception as e:
-        print("\n❌ BLOCKCHAIN ERROR")
-        print(repr(e))
-
-        blockchain_receipt = {
-            "status": "Fallback Offline Engine Mode",
-            "transaction_hash": "0x" + "0" * 64,
-            "block_number": 0,
-            "gas_used": 0,
-        }
-
-    db_json_pack = {"timeline": timeline_records, "gallery": tampered_frames_gallery}
+        print("[BLOCKCHAIN ERROR]",e); receipt={"status":"Offline","transaction_hash":"0x"+"0"*64,"block_number":0,"gas_used":0}
+    anchored=bool(receipt.get("transaction_hash")) and receipt.get("transaction_hash")!="0x"+"0"*64
+    pack={"media_type":"video","timeline":timeline,"gallery":result.get("gallery",[]),"tampering_intervals":intervals,"video_info":info,"frame_statistics":result["frame_statistics"],"model":result["model"],"label_policy":result["label_policy"]}
     try:
-        existing_video = db.query(DBVideoRecord).filter(DBVideoRecord.file_hash == file_hash).first()
-        if not existing_video:
-            db.add(DBVideoRecord(
-                file_hash=file_hash,
-                filename=filename,
-                file_path=orig_save_path,
-                file_size_bytes=file_size,
-            ))
-            db.flush()
-
-        existing_report = db.query(DBForensicReport).filter(DBForensicReport.file_hash == file_hash).first()
-        is_anchored = "0x0000" not in str(blockchain_receipt.get("transaction_hash"))
-
-        if existing_report:
-            existing_report.case_id = case_id
-            existing_report.verdict = overall_verdict
-            existing_report.confidence_score = round(overall_score, 2)
-            existing_report.timeline_json = audio_db_pack
-            existing_report.blockchain_tx_hash = blockchain_receipt.get("transaction_hash")
-            existing_report.block_number = blockchain_receipt.get("block_number")
-            existing_report.gas_used = blockchain_receipt.get("gas_used")
-            existing_report.is_anchored = is_anchored
-
+        existing=db.query(DBVideoRecord).filter(DBVideoRecord.file_hash==file_hash).first()
+        if not existing:
+            db.add(DBVideoRecord(file_hash=file_hash,filename=filename,file_path=orig_path,file_size_bytes=len(file_contents))); db.flush()
+        report=db.query(DBForensicReport).filter(DBForensicReport.file_hash==file_hash).first()
+        if report:
+            report.case_id=case_id; report.verdict=verdict; report.confidence_score=confidence; report.device_type="Temporal Video AI"; report.resolution=f"{info['width']}x{info['height']}"; report.fps=info['fps']; report.compression_profile="Temporal Transformer"; report.timeline_json=pack; report.blockchain_tx_hash=receipt.get("transaction_hash"); report.block_number=receipt.get("block_number"); report.gas_used=receipt.get("gas_used"); report.is_anchored=anchored
         else:
-            db.add(DBForensicReport(
-                file_hash=file_hash,
-                case_id=case_id,
-                verdict=overall_verdict,
-                confidence_score=round(overall_score, 2),
-                timeline_json=audio_db_pack,
-                device_type="Audio",
-                compression_profile="AASIST",
-                blockchain_tx_hash=blockchain_receipt.get("transaction_hash"),
-                block_number=blockchain_receipt.get("block_number"),
-                gas_used=blockchain_receipt.get("gas_used"),
-                is_anchored=is_anchored,
-            ))
+            db.add(DBForensicReport(file_hash=file_hash,case_id=case_id,verdict=verdict,confidence_score=confidence,device_type="Temporal Video AI",resolution=f"{info['width']}x{info['height']}",fps=info['fps'],compression_profile="Temporal Transformer",timeline_json=pack,blockchain_tx_hash=receipt.get("transaction_hash"),block_number=receipt.get("block_number"),gas_used=receipt.get("gas_used"),is_anchored=anchored))
+        db.add(DBAuditLog(action="TEMPORAL_VIDEO_FORENSIC_RUN",file_hash=file_hash,details=f"Video-level temporal model. Verdict={verdict}; confidence={confidence:.2f}%; intervals={intervals}")); db.commit()
+    except Exception as e:
+        db.rollback(); print("[VIDEO DB ERROR]",e)
 
-        db.add(DBAuditLog(
-            action="CRITICAL_HYPER_FORENSIC_RUN",
-            file_hash=file_hash,
-            details=f"Engine ran complete analysis. Case: {case_id}. Risk: {risk_score}%",
-        ))
-        db.commit()
-    except Exception:
-        db.rollback()
-
-    base_conf = round(global_confidence, 2)
-    temporal_stability_score = base_conf
-
-    vit_score = base_conf
-    eff_score = round(min(base_conf * 0.98, 100.0), 2)
-    xcep_score = round(min(base_conf * 0.99, 100.0), 2)
-    cnn_score = round(min(base_conf * 0.96, 100.0), 2)
-
-    fusion_matrix = {
-        "vit_score": vit_score,
-        "efficientnet_score": eff_score,
-        "xception_score": xcep_score,
-        "cnn_score": cnn_score,
-        "temporal_stability_score": temporal_stability_score,
-        "final_fusion_verdict": base_conf,
+    return {
+        "hash_verification":{"sha256_hash":file_hash},
+        "verdict":verdict,"confidence":confidence,"risk_score":result["tampering_probability"],
+        "model":result["model"],"label_policy":result["label_policy"],
+        "video_info":info,"frame_statistics":result["frame_statistics"],
+        "tampering_intervals":intervals,"timeline":timeline,"gallery":result.get("gallery",[]),
+        "dashboard_analytics":{"temporal_stability_score":round(confidence,2),"tampering_probability":result["tampering_probability"]},
+        "original_video_stream_url":f"/stream/original/{file_hash}","processed_video_stream_url":f"/stream/processed/{file_hash}",
+        "blockchain":receipt,"status":"Video Analysis Successful"
     }
-
-    final_payload = {
-        "hash_verification": {"sha256_hash": file_hash},
-        "verdict": ai_verdict,
-        "confidence": base_conf,
-        "risk_score": risk_score,
-        "device_type": source_estimation,
-        "benchmark": target_benchmark,
-        "dashboard_analytics": fusion_matrix,
-        "forensics": {
-            "1_source_profile": {
-                "estimated_device_type": source_estimation,
-                "container_format": filename.split('.')[-1].upper(),
-            },
-            "2_frame_size": {"width_pixels": width, "height_pixels": height},
-            "3_frame_rate": {"frames_per_second": round(fps, 2), "total_frame_count": total_frames},
-        },
-        "biometric_landmark_telemetry": {
-            "face_isolation_status": "Success" if total_face_detections > 0 else "No Active Profiles",
-            "face_detection_rate": round(total_face_detections / max(total_evaluated, 1) * 100, 2),
-        },
-        "frame_statistics": {
-            "total_frames": total_frames,
-            "evaluated_frames": total_evaluated,
-            "tampered_frames": tampered_count,
-            "original_frames": (total_evaluated - tampered_count),
-            "tampering_ratio": round((tampered_count / max(total_evaluated, 1)) * 100, 2),
-        },
-        "chart_data": [
-            {
-                "frame": item["frame_number"],
-                "timestamp": item["timestamp"],
-                "probability": item["tampering_probability"],
-            }
-            for item in timeline_records
-        ],
-        "timeline": timeline_records,
-        "gallery": tampered_frames_gallery,
-        "multi_model_fusion": fusion_matrix,
-        "original_video_stream_url": f"/stream/original/{file_hash}",
-        "processed_video_stream_url": f"/stream/processed/{file_hash}", # Updated key and URL
-    }
-
-    mock_redis_cache[file_hash] = final_payload
-    return final_payload
 
 
 # --- API Routes ---
