@@ -1,0 +1,66 @@
+/* src/components/premium-typography.css
+   ============================================================
+   NEW FEATURE — Premium Typography
+   An OPT-IN typographic layer, scoped entirely under a new
+   `.phoenix-premium-type` wrapper class so it never collides with
+   or overrides any existing rule in App.jsx's <style> block.
+   To use: wrap any section in <div className="phoenix-premium-type">
+   and import this file once at the app root — nothing existing
+   needs to change unless you choose to add the wrapper class.
+
+   Pairing rationale (kept in the spirit of the existing system):
+     Display — Space Grotesk stays as the geometric technical face
+     Editorial accent — Fraunces (a serif with real optical texture,
+       higher-contrast than Instrument Serif) for a small number of
+       "docket"-style numerals/quotes — an escalation of the same
+       instinct the file already had for Instrument Serif, not a
+       replacement of it.
+     Data/UI — IBM Plex Mono stays as the monospaced precision face,
+       this layer only adds tighter tabular-figure tracking options.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&display=swap');
+
+.phoenix-premium-type {
+  --pt-display: 'Space Grotesk', sans-serif;
+  --pt-editorial: 'Fraunces', serif;
+  --pt-mono: 'IBM Plex Mono', monospace;
+}
+
+.phoenix-premium-type .pt-editorial {
+  font-family: var(--pt-editorial);
+  font-style: italic;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+.phoenix-premium-type .pt-display-xl {
+  font-family: var(--pt-display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.02;
+}
+
+.phoenix-premium-type .pt-mono-tight {
+  font-family: var(--pt-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.phoenix-premium-type .pt-eyebrow {
+  font-family: var(--pt-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+}
+
+/* A single deliberate "docket number" treatment for case IDs,
+   mirroring the restraint principle: one accent, used sparingly */
+.phoenix-premium-type .pt-docket {
+  font-family: var(--pt-editorial);
+  font-style: italic;
+  font-size: 15px;
+  color: #F5A623;
+}
