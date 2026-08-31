@@ -9,252 +9,955 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix
-from torch.utils.data import Dataset, DataLoader
+
+from sklearn.metrics import (
+    accuracy_score,
+    roc_auc_score,
+    classification_report,
+    confusion_matrix,
+)
+
+from torch.utils.data import (
+    Dataset,
+    DataLoader,
+    WeightedRandomSampler,
+)
+
 from torchvision import transforms
 
-from backend.ai_engine.temporal_video_model import TemporalVideoEvidenceAI
+from backend.ai_engine.temporal_video_model import (
+    TemporalVideoEvidenceAI,
+)
 
-VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
-LABELS = {"authentic": 0, "tampered": 1}
 
+VIDEO_EXTS = {
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+}
+
+LABELS = {
+    "authentic": 0,
+    "tampered": 1,
+}
+
+
+# ============================================================
+# REPRODUCIBILITY
+# ============================================================
+
+def seed_everything(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+# ============================================================
+# VIDEO LABELING
+# ============================================================
 
 def classify_video(path: Path):
+
     p = str(path).replace("\\", "/").lower()
-    # Celeb-DF v2
-    if "/celeb-real/" in p or "/youtube-real/" in p:
+
+    # Celeb-DF
+    if "/celeb-real/" in p:
         return 0
+
+    if "/youtube-real/" in p:
+        return 0
+
     if "/celeb-synthesis/" in p:
         return 1
-    # FakeAVCeleb naming convention: FakeVideo-* vs RealVideo-*.
-    if "fakevideo" in p or "/fake/" in p or "synthesis" in p or "deepfake" in p:
+
+    # FakeAVCeleb
+    if "fakevideo" in p:
         return 1
-    if "realvideo" in p or "/real/" in p or "original" in p or "authentic" in p:
+
+    if "realvideo" in p:
         return 0
+
     return None
 
 
 def discover(root: Path):
+
     records = []
+
     for p in root.rglob("*"):
-        if p.is_file() and p.suffix.lower() in VIDEO_EXTS:
-            label = classify_video(p)
-            if label is not None:
-                records.append({"path": str(p.resolve()), "label": label})
+
+        if not p.is_file():
+            continue
+
+        if p.suffix.lower() not in VIDEO_EXTS:
+            continue
+
+        label = classify_video(p)
+
+        if label is not None:
+
+            records.append(
+                {
+                    "path": str(p.resolve()),
+                    "label": label,
+                }
+            )
+
     return records
 
 
-def build_manifest(args):
-    roots = [Path(args.celebdf), Path(args.fakeav)]
+# ============================================================
+# MANIFEST
+# ============================================================
+
+def load_records(manifest, split):
+
     records = []
-    for root in roots:
-        if root.exists():
-            found = discover(root)
-            print(f"{root}: {len(found)} labeled videos")
-            records.extend(found)
-        else:
-            print(f"Skipping missing dataset: {root}")
 
-    # Remove duplicates by absolute path.
-    uniq = {r["path"]: r for r in records}
-    records = list(uniq.values())
+    with open(manifest) as f:
 
-    # Video-level stratified split. No frames from the same video can leak across sets.
-    rng = random.Random(args.seed)
-    authentic = [r for r in records if r["label"] == 0]
-    tampered = [r for r in records if r["label"] == 1]
-    rng.shuffle(authentic)
-    rng.shuffle(tampered)
+        for line in f:
 
-    def split(items):
-        n = len(items)
-        n_test = max(1, int(n * args.test_ratio))
-        n_val = max(1, int(n * args.val_ratio))
-        return items[n_test + n_val:], items[n_test:n_test + n_val], items[:n_test]
+            r = json.loads(line)
 
-    tr0, va0, te0 = split(authentic)
-    tr1, va1, te1 = split(tampered)
-    train = tr0 + tr1
-    val = va0 + va1
-    test = te0 + te1
-    rng.shuffle(train); rng.shuffle(val); rng.shuffle(test)
+            if r.get("split") == split:
+                records.append(r)
 
-    out = Path(args.manifest)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w") as f:
-        for split_name, items in (("train", train), ("val", val), ("test", test)):
-            for r in items:
-                f.write(json.dumps({"split": split_name, **r}) + "\n")
+    return records
 
-    print(f"Manifest: {out}")
-    for name, items in (("train", train), ("val", val), ("test", test)):
-        print(f"{name}: total={len(items)} authentic={sum(x['label']==0 for x in items)} tampered={sum(x['label']==1 for x in items)}")
-    return out
 
+# ============================================================
+# DATASET
+# ============================================================
 
 class VideoSequenceDataset(Dataset):
-    def __init__(self, records, frames=8, train=False):
+
+    def __init__(
+        self,
+        records,
+        frames=4,
+        train=False,
+    ):
+
         self.records = records
         self.frames = frames
         self.train = train
-        self.base = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize((256, 256)),
-            transforms.RandomResizedCrop(224, scale=(0.82, 1.0)) if train else transforms.CenterCrop(224),
-            transforms.RandomHorizontalFlip(0.5) if train else transforms.Lambda(lambda x: x),
-            transforms.ColorJitter(0.08, 0.08, 0.08, 0.02) if train else transforms.Lambda(lambda x: x),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ])
+
+        if train:
+
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToPILImage(),
+                    transforms.Resize((256, 256)),
+                    transforms.RandomResizedCrop(
+                        224,
+                        scale=(0.90, 1.0),
+                    ),
+                    transforms.RandomHorizontalFlip(
+                        p=0.5
+                    ),
+                    transforms.ColorJitter(
+                        brightness=0.05,
+                        contrast=0.05,
+                        saturation=0.05,
+                        hue=0.01,
+                    ),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        [0.485, 0.456, 0.406],
+                        [0.229, 0.224, 0.225],
+                    ),
+                ]
+            )
+
+        else:
+
+            self.transform = transforms.Compose(
+                [
+                    transforms.ToPILImage(),
+                    transforms.Resize((256, 256)),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        [0.485, 0.456, 0.406],
+                        [0.229, 0.224, 0.225],
+                    ),
+                ]
+            )
 
     def __len__(self):
         return len(self.records)
 
-    def _read(self, path):
+    def read_video(self, path):
+
         cap = cv2.VideoCapture(path)
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = float(cap.get(cv2.CAP_PROP_FPS) or 25.0)
+
+        if not cap.isOpened():
+            raise RuntimeError(
+                f"Cannot open video: {path}"
+            )
+
+        total = int(
+            cap.get(
+                cv2.CAP_PROP_FRAME_COUNT
+            )
+        )
+
         if total <= 0:
             cap.release()
-            raise RuntimeError(f"Cannot read video: {path}")
 
-        positions = np.linspace(0, max(0, total - 1), self.frames).astype(int)
-        imgs = []
-        for pos in positions:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(pos))
+            raise RuntimeError(
+                f"Invalid video: {path}"
+            )
+
+        positions = np.linspace(
+            0,
+            total - 1,
+            self.frames,
+        ).astype(int)
+
+        frames = []
+
+        last_frame = None
+
+        for position in positions:
+
+            cap.set(
+                cv2.CAP_PROP_POS_FRAMES,
+                int(position),
+            )
+
             ok, frame = cap.read()
+
             if not ok or frame is None:
-                if imgs:
-                    frame = imgs[-1]
+
+                if last_frame is None:
+
+                    frame = np.zeros(
+                        (224, 224, 3),
+                        dtype=np.uint8,
+                    )
+
                 else:
-                    frame = np.zeros((224, 224, 3), dtype=np.uint8)
+
+                    frame = last_frame
+
             else:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            imgs.append(frame)
+
+                frame = cv2.cvtColor(
+                    frame,
+                    cv2.COLOR_BGR2RGB,
+                )
+
+            last_frame = frame
+            frames.append(frame)
+
         cap.release()
-        return imgs, fps, total
+
+        return frames
 
     def __getitem__(self, idx):
-        rec = self.records[idx]
+
+        record = self.records[idx]
+
         try:
-            imgs, fps, total = self._read(rec["path"])
-            tensor = torch.stack([self.base(x) for x in imgs])
-            return tensor, torch.tensor(rec["label"], dtype=torch.long), rec["path"]
+
+            frames = self.read_video(
+                record["path"]
+            )
+
+            tensor = torch.stack(
+                [
+                    self.transform(frame)
+                    for frame in frames
+                ]
+            )
+
+            label = torch.tensor(
+                record["label"],
+                dtype=torch.long,
+            )
+
+            return (
+                tensor,
+                label,
+                record["path"],
+            )
+
         except Exception as e:
-            # Retry a different video instead of killing a long run on one corrupt file.
-            if idx + 1 < len(self.records):
-                return self.__getitem__((idx + 1) % len(self.records))
-            raise e
+
+            print(
+                f"Warning: {e}"
+            )
+
+            # Return a valid fallback instead of
+            # recursively selecting another label.
+            tensor = torch.zeros(
+                self.frames,
+                3,
+                224,
+                224,
+                dtype=torch.float32,
+            )
+
+            label = torch.tensor(
+                record["label"],
+                dtype=torch.long,
+            )
+
+            return (
+                tensor,
+                label,
+                record["path"],
+            )
 
 
-def load_records(manifest, split):
-    records = []
-    with open(manifest) as f:
-        for line in f:
-            r = json.loads(line)
-            if r["split"] == split:
-                records.append(r)
-    return records
+# ============================================================
+# DEVICE
+# ============================================================
 
+def get_device():
 
-def device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
+
     if torch.cuda.is_available():
         return torch.device("cuda")
+
     return torch.device("cpu")
 
 
-def evaluate(model, loader, criterion, dev):
-    model.eval(); losses=[]; ys=[]; ps=[]
-    with torch.no_grad():
-        for x, y, _ in loader:
-            x, y = x.to(dev), y.to(dev)
-            logits, frame_logits = model(x)
-            loss = criterion(logits, y)
-            losses.append(loss.item())
-            ys.extend(y.cpu().numpy().tolist())
-            ps.extend(torch.softmax(logits, 1)[:, 1].cpu().numpy().tolist())
-    pred = [int(p >= 0.5) for p in ps]
-    acc = accuracy_score(ys, pred)
-    auc = roc_auc_score(ys, ps) if len(set(ys)) == 2 else float("nan")
-    return float(np.mean(losses)), acc, auc, ys, pred, ps
+# ============================================================
+# EVALUATION
+# ============================================================
 
+def evaluate(
+    model,
+    loader,
+    criterion,
+    device,
+):
+
+    model.eval()
+
+    losses = []
+    ys = []
+    probabilities = []
+
+    with torch.no_grad():
+
+        for x, y, _ in loader:
+
+            x = x.to(device)
+            y = y.to(device)
+
+            logits, attention = model(x)
+
+            loss = criterion(
+                logits,
+                y,
+            )
+
+            losses.append(
+                loss.item()
+            )
+
+            prob = torch.softmax(
+                logits,
+                dim=1,
+            )[:, 1]
+
+            ys.extend(
+                y.cpu().numpy().tolist()
+            )
+
+            probabilities.extend(
+                prob.cpu().numpy().tolist()
+            )
+
+    predictions = [
+        int(p >= 0.5)
+        for p in probabilities
+    ]
+
+    accuracy = accuracy_score(
+        ys,
+        predictions,
+    )
+
+    auc = roc_auc_score(
+        ys,
+        probabilities,
+    )
+
+    return (
+        float(np.mean(losses)),
+        float(accuracy),
+        float(auc),
+        ys,
+        predictions,
+        probabilities,
+    )
+
+
+# ============================================================
+# TRAINING
+# ============================================================
 
 def main(args):
-    if args.manifest_missing or not Path(args.manifest).exists():
-        build_manifest(args)
-    train_records = load_records(args.manifest, "train")
-    val_records = load_records(args.manifest, "val")
-    test_records = load_records(args.manifest, "test")
 
-    dev = device(); print("Device:", dev)
-    print("Video counts:", len(train_records), len(val_records), len(test_records))
+    seed_everything(args.seed)
 
-    train_ds = VideoSequenceDataset(train_records, args.frames, True)
-    val_ds = VideoSequenceDataset(val_records, args.frames, False)
-    test_ds = VideoSequenceDataset(test_records, args.frames, False)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    device = get_device()
 
-    model = TemporalVideoEvidenceAI(pretrained=True).to(dev)
+    print()
+    print("=" * 60)
+    print("PHOENIX TEMPORAL VIDEO V3")
+    print("=" * 60)
+    print("Device:", device)
+
+    manifest = Path(args.manifest)
+
+    if not manifest.exists():
+
+        raise FileNotFoundError(
+            f"Manifest not found:\n{manifest}"
+        )
+
+    train_records = load_records(
+        manifest,
+        "train",
+    )
+
+    val_records = load_records(
+        manifest,
+        "val",
+    )
+
+    test_records = load_records(
+        manifest,
+        "test",
+    )
+
+    print()
+    print("DATASET")
+
+    for name, records in [
+        ("TRAIN", train_records),
+        ("VAL", val_records),
+        ("TEST", test_records),
+    ]:
+
+        n0 = sum(
+            r["label"] == 0
+            for r in records
+        )
+
+        n1 = sum(
+            r["label"] == 1
+            for r in records
+        )
+
+        print(
+            f"{name}: "
+            f"{len(records)} "
+            f"(authentic={n0}, tampered={n1})"
+        )
+
+    # --------------------------------------------------------
+    # DATA
+    # --------------------------------------------------------
+
+    train_ds = VideoSequenceDataset(
+        train_records,
+        args.frames,
+        train=True,
+    )
+
+    val_ds = VideoSequenceDataset(
+        val_records,
+        args.frames,
+        train=False,
+    )
+
+    test_ds = VideoSequenceDataset(
+        test_records,
+        args.frames,
+        train=False,
+    )
+
+    # --------------------------------------------------------
+    # BALANCED SAMPLING
+    # --------------------------------------------------------
+
+    labels = np.array(
+        [
+            r["label"]
+            for r in train_records
+        ]
+    )
+
+    class_counts = np.bincount(
+        labels,
+        minlength=2,
+    )
+
+    sample_weights = np.array(
+        [
+            1.0 / class_counts[label]
+            for label in labels
+        ],
+        dtype=np.float64,
+    )
+
+    sampler = WeightedRandomSampler(
+        weights=torch.as_tensor(
+            sample_weights,
+            dtype=torch.double,
+        ),
+        num_samples=len(train_records),
+        replacement=True,
+    )
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        sampler=sampler,
+        num_workers=0,
+    )
+
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+
+    # --------------------------------------------------------
+    # MODEL
+    # --------------------------------------------------------
+
+    model = TemporalVideoEvidenceAI(
+        pretrained=True,
+        feature_dim=256,
+        nhead=4,
+        layers=2,
+        dropout=0.20,
+    ).to(device)
+
+    # Start with the backbone frozen.
     model.freeze_backbone()
 
-    # Balanced loss computed from the entire training-video population.
-    n0 = sum(r["label"] == 0 for r in train_records)
-    n1 = sum(r["label"] == 1 for r in train_records)
-    weights = torch.tensor([len(train_records)/(2*n0), len(train_records)/(2*n1)], dtype=torch.float32, device=dev)
-    criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=0.05)
-    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=1e-4)
-    best_auc = -1
-    best_path = Path(args.output)
-    best_path.parent.mkdir(parents=True, exist_ok=True)
+    # --------------------------------------------------------
+    # LOSS
+    # --------------------------------------------------------
+
+    # Balanced dataset + balanced sampler.
+    # No auxiliary frame loss.
+    criterion = nn.CrossEntropyLoss(
+        label_smoothing=0.02
+    )
+
+    # --------------------------------------------------------
+    # OPTIMIZER
+    # --------------------------------------------------------
+
+    head_params = []
+
+    for name, param in model.named_parameters():
+
+        if not param.requires_grad:
+            continue
+
+        head_params.append(param)
+
+    optimizer = torch.optim.AdamW(
+        head_params,
+        lr=args.lr,
+        weight_decay=1e-4,
+    )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=args.epochs,
+        eta_min=args.lr * 0.1,
+    )
+
+    # --------------------------------------------------------
+    # CHECKPOINT
+    # --------------------------------------------------------
+
+    best_auc = -1.0
+
+    output = Path(args.output)
+
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    print()
+    print("MODEL")
+    print(
+        "Total parameters:",
+        sum(
+            p.numel()
+            for p in model.parameters()
+        ),
+    )
+
+    print(
+        "Trainable parameters:",
+        sum(
+            p.numel()
+            for p in model.parameters()
+            if p.requires_grad
+        ),
+    )
+
+    print()
+    print("=" * 60)
+    print("START TRAINING")
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # EPOCHS
+    # --------------------------------------------------------
 
     for epoch in range(args.epochs):
-        t0=time.time(); model.train(); total=0; correct=0; losses=[]
+
+        epoch_start = time.time()
+
+        # Unfreeze late EfficientNet blocks after
+        # the temporal head has learned a useful representation.
         if epoch == args.unfreeze_epoch:
-            model.unfreeze_last_backbone_blocks(2)
-            optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.finetune_lr, weight_decay=1e-4)
-            print("Unfroze last EfficientNet blocks for fine-tuning")
-        for bi,(x,y,_) in enumerate(train_loader):
-            x,y=x.to(dev),y.to(dev); optimizer.zero_grad(set_to_none=True)
-            vlogits, flogits = model(x)
-            loss = criterion(vlogits,y) + args.frame_loss_weight * criterion(flogits.reshape(-1,2), y[:,None].expand(-1, flogits.shape[1]).reshape(-1))
-            loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0); optimizer.step()
-            losses.append(loss.item()); correct += (vlogits.argmax(1)==y).sum().item(); total += y.numel()
-            if bi % 100 == 0: print(f"epoch={epoch+1} batch={bi}/{len(train_loader)} loss={loss.item():.4f}")
-        val_loss,val_acc,val_auc,_,_,_=evaluate(model,val_loader,criterion,dev)
-        print(f"Epoch {epoch+1}/{args.epochs} train_loss={np.mean(losses):.4f} train_acc={100*correct/max(1,total):.2f}% val_acc={100*val_acc:.2f}% val_auc={val_auc:.4f} time={time.time()-t0:.1f}s")
+
+            model.unfreeze_last_backbone_blocks(
+                args.unfreeze_blocks
+            )
+
+            optimizer = torch.optim.AdamW(
+                [
+                    {
+                        "params": [
+                            p
+                            for p in model.parameters()
+                            if p.requires_grad
+                        ],
+                        "lr": args.finetune_lr,
+                    }
+                ],
+                weight_decay=1e-4,
+            )
+
+            print()
+            print(
+                "Unfroze last",
+                args.unfreeze_blocks,
+                "EfficientNet blocks",
+            )
+
+        model.train()
+
+        running_loss = 0.0
+        correct = 0
+        total = 0
+
+        for batch_idx, (x, y, _) in enumerate(
+            train_loader
+        ):
+
+            x = x.to(device)
+            y = y.to(device)
+
+            optimizer.zero_grad(
+                set_to_none=True
+            )
+
+            logits, attention = model(x)
+
+            loss = criterion(
+                logits,
+                y,
+            )
+
+            loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(),
+                max_norm=2.0,
+            )
+
+            optimizer.step()
+
+            running_loss += loss.item()
+
+            correct += (
+                logits.argmax(1) == y
+            ).sum().item()
+
+            total += y.numel()
+
+            if (
+                batch_idx == 0
+                or batch_idx % args.print_every == 0
+            ):
+
+                print(
+                    f"epoch={epoch+1}/{args.epochs} "
+                    f"batch={batch_idx}/{len(train_loader)} "
+                    f"loss={loss.item():.4f}"
+                )
+
+        scheduler.step()
+
+        train_loss = (
+            running_loss
+            / len(train_loader)
+        )
+
+        train_acc = (
+            correct
+            / max(1, total)
+        )
+
+        val_loss, val_acc, val_auc, _, _, _ = evaluate(
+            model,
+            val_loader,
+            criterion,
+            device,
+        )
+
+        elapsed = (
+            time.time()
+            - epoch_start
+        )
+
+        print()
+        print(
+            f"Epoch {epoch+1}/{args.epochs}"
+        )
+
+        print(
+            f"Train Loss : {train_loss:.4f}"
+        )
+
+        print(
+            f"Train Acc  : {100*train_acc:.2f}%"
+        )
+
+        print(
+            f"Val Loss   : {val_loss:.4f}"
+        )
+
+        print(
+            f"Val Acc    : {100*val_acc:.2f}%"
+        )
+
+        print(
+            f"Val AUC    : {val_auc:.5f}"
+        )
+
+        print(
+            f"Time       : {elapsed:.1f}s"
+        )
+
+        # ----------------------------------------------------
+        # BEST CHECKPOINT
+        # ----------------------------------------------------
+
         if val_auc > best_auc:
-            best_auc=val_auc
-            torch.save({"model":model.state_dict(),"epoch":epoch+1,"val_auc":val_auc,"label_policy":"0=authentic/original,1=tampered/fake","frames":args.frames},best_path)
-            print("Saved best:",best_path)
 
-    ckpt=torch.load(best_path,map_location=dev); model.load_state_dict(ckpt["model"])
-    test_loss,test_acc,test_auc,y,pred,prob=evaluate(model,test_loader,criterion,dev)
-    print("\nFINAL VIDEO-DISJOINT TEST")
-    print("Accuracy:",round(100*test_acc,2),"%")
-    print("ROC-AUC:",round(test_auc,5))
-    print(confusion_matrix(y,pred))
-    print(classification_report(y,pred,target_names=["Authentic","Tampered"]))
+            best_auc = val_auc
 
+            torch.save(
+                {
+                    "model": model.state_dict(),
+                    "epoch": epoch + 1,
+                    "val_auc": val_auc,
+                    "frames": args.frames,
+                    "label_policy":
+                        "0=authentic/original,"
+                        "1=tampered/fake",
+                },
+                output,
+            )
+
+            print(
+                "✓ Saved best:",
+                output,
+            )
+
+    # ========================================================
+    # FINAL TEST
+    # ========================================================
+
+    print()
+    print("=" * 60)
+    print("LOADING BEST CHECKPOINT")
+    print("=" * 60)
+
+    checkpoint = torch.load(
+        output,
+        map_location=device,
+    )
+
+    model.load_state_dict(
+        checkpoint["model"]
+    )
+
+    test_loss, test_acc, test_auc, y, pred, prob = evaluate(
+        model,
+        test_loader,
+        criterion,
+        device,
+    )
+
+    print()
+    print("=" * 60)
+    print("FINAL VIDEO-DISJOINT TEST")
+    print("=" * 60)
+
+    print(
+        "Best validation ROC-AUC:",
+        round(
+            checkpoint["val_auc"],
+            5,
+        ),
+    )
+
+    print(
+        "Accuracy:",
+        round(
+            100 * test_acc,
+            2,
+        ),
+        "%",
+    )
+
+    print(
+        "ROC-AUC:",
+        round(
+            test_auc,
+            5,
+        ),
+    )
+
+    print()
+    print("CONFUSION MATRIX")
+
+    print(
+        confusion_matrix(
+            y,
+            pred,
+        )
+    )
+
+    print()
+    print("CLASSIFICATION REPORT")
+
+    print(
+        classification_report(
+            y,
+            pred,
+            target_names=[
+                "Authentic",
+                "Tampered",
+            ],
+            digits=4,
+        )
+    )
+
+    print()
+    print(
+        "Checkpoint:",
+        output,
+    )
+
+
+# ============================================================
+# CLI
+# ============================================================
 
 if __name__ == "__main__":
-    p=argparse.ArgumentParser()
-    p.add_argument("--celebdf",default="backend/kaggle_data/Celeb-DF-v2")
-    p.add_argument("--fakeav",default="backend/kaggle_data/FakeAVCeleb_v1.2")
-    p.add_argument("--manifest",default="backend/kaggle_data/video_manifest.jsonl")
-    p.add_argument("--manifest-missing",action="store_true")
-    p.add_argument("--frames",type=int,default=8)
-    p.add_argument("--batch-size",type=int,default=2)
-    p.add_argument("--epochs",type=int,default=8)
-    p.add_argument("--unfreeze-epoch",type=int,default=3)
-    p.add_argument("--lr",type=float,default=2e-4)
-    p.add_argument("--finetune-lr",type=float,default=2e-5)
-    p.add_argument("--frame-loss-weight",type=float,default=0.25)
-    p.add_argument("--val-ratio",type=float,default=0.10)
-    p.add_argument("--test-ratio",type=float,default=0.10)
-    p.add_argument("--seed",type=int,default=42)
-    p.add_argument("--output",default="models_weights/temporal_video_evidence_best.pth")
-    main(p.parse_args())
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--manifest",
+        default=
+        "backend/kaggle_data/video_manifest_balanced.jsonl",
+    )
+
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=4,
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=2,
+    )
+
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=8,
+    )
+
+    parser.add_argument(
+        "--unfreeze-epoch",
+        type=int,
+        default=2,
+    )
+
+    parser.add_argument(
+        "--unfreeze-blocks",
+        type=int,
+        default=2,
+    )
+
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=3e-4,
+    )
+
+    parser.add_argument(
+        "--finetune-lr",
+        type=float,
+        default=2e-5,
+    )
+
+    parser.add_argument(
+        "--print-every",
+        type=int,
+        default=100,
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+    )
+
+    parser.add_argument(
+        "--output",
+        default=
+        "models_weights/temporal_video_evidence_v3_best.pth",
+    )
+
+    args = parser.parse_args()
+
+    main(args)
