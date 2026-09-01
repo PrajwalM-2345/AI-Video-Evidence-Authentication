@@ -87,7 +87,7 @@ class DBFeedbackLog(Base):
 
 
 # --- Load models (module-level, runs once at import) ---
-TEMPORAL_WEIGHTS_PATH = "models_weights/temporal_video_evidence_best.pth"
+TEMPORAL_WEIGHTS_PATH = "models_weights/temporal_video_evidence_v3_best.pth"
 temporal_video_model = None
 temporal_device = None
 if os.path.exists(TEMPORAL_WEIGHTS_PATH):
