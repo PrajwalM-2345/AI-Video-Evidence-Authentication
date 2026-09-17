@@ -2,7 +2,7 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:061A2F,50:0B4F8A,100:00C2FF&animation=fadeIn" alt="Banner" width="100%" />
 
-<img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=40&duration=3000&pause=5000&color=00C2FF&center=true&vCenter=true&width=600&height=70&lines=AI+Video+Evidence+Authentication" alt="AI Video Evidence Authentication" />
+<img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=40&duration=3000&pause=5000&color=00C2FF&center=true&vCenter=true&width=600&height=70&lines=AI+Video+Evidence+Authentication" alt="AI-Video-Evidence-Authen." />
 
 <h2>AI Video Evidence Authentication</h2>
 
