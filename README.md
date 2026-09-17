@@ -4,7 +4,8 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=40&duration=3000&pause=5000&color=00C2FF&center=true&vCenter=true&width=600&height=70&lines=AI+Video+Evidence+Authentication" alt="AI Video Evidence Authentication" />
 
-<h1>AI Video Evidence Authentication</h1>
+<h2>AI Video Evidence Authentication</h2>
+
 
 <h3>Multimodal AI • Video Forensics • Audio Forensics • Digital Evidence • Blockchain</h3>
 
