@@ -262,7 +262,7 @@ def _draw_verified_stamp(c: pdfcanvas.Canvas, x, y, verified: bool = True, angle
             .lower()
     )
 
-    verified = blockchain_status == "success" if verified else "MANUAL REVIEW REQUIRED"
+    verified = (blockchain_status == "success")
 
     outer_r = 58
     inner_r = 49
@@ -317,33 +317,35 @@ def _draw_verified_stamp(c: pdfcanvas.Canvas, x, y, verified: bool = True, angle
 # PAGE DECORATIONS
 # ============================================================
 
-def _page_decorations(c: pdfcanvas.Canvas, doc, data: dict):
-    width, height = letter
-    c.saveState()
+def _make_page_decorations(data: dict):
+    def _page_decorations(c: pdfcanvas.Canvas, doc):
+        width, height = letter
+        c.saveState()
 
-    c.setStrokeColor(colors.HexColor("#CBD5E1"))
-    c.setLineWidth(0.75)
-    c.rect(18, 18, width - 36, height - 36, stroke=1, fill=0)
+        c.setStrokeColor(colors.HexColor("#CBD5E1"))
+        c.setLineWidth(0.75)
+        c.rect(18, 18, width - 36, height - 36, stroke=1, fill=0)
 
-    c.saveState()
-    c.setFillColor(colors.Color(0.06, 0.09, 0.16, alpha=0.035))
-    c.setFont(FONT_BOLD, 62)
-    c.translate(width / 2, height / 2)
-    c.rotate(38)
-    c.drawCentredString(0, 0, "PHOENIX FORENSIC GATEWAY")
-    c.restoreState()
+        c.saveState()
+        c.setFillColor(colors.Color(0.06, 0.09, 0.16, alpha=0.035))
+        c.setFont(FONT_BOLD, 62)
+        c.translate(width / 2, height / 2)
+        c.rotate(38)
+        c.drawCentredString(0, 0, "PHOENIX FORENSIC GATEWAY")
+        c.restoreState()
 
-    c.setFillColor(colors.HexColor("#94A3B8"))
-    c.setFont(FONT_NAME, 7.5)
-    c.drawString(45, 28, "Phoenix Digital Forensics Lab — Confidential Evidentiary Document")
+        c.setFillColor(colors.HexColor("#94A3B8"))
+        c.setFont(FONT_NAME, 7.5)
+        c.drawString(45, 28, "Phoenix Digital Forensics Lab — Confidential Evidentiary Document")
 
-    if doc.page == 1:
-        verdict = data.get("ai_model_inference", {}).get("verdict", "")
-        is_tampered = ("Tampering" in verdict) or ("Synthetic" in verdict)
-        _draw_verified_stamp(c, width - 110, height - 130, verified=not is_tampered)
+        if doc.page == 1:
+            verdict = data.get("ai_model_inference", {}).get("verdict", "")
+            is_tampered = ("Tampering" in verdict) or ("Synthetic" in verdict)
+            _draw_verified_stamp(c, width - 110, height - 130, verified=not is_tampered)
 
-    c.restoreState()
+        c.restoreState()
 
+    return _page_decorations
 
 # ============================================================
 # MAIN GENERATOR
@@ -1139,8 +1141,6 @@ def generate_forensic_pdf(data: dict) -> io.BytesIO:
 
     doc.build(
         story,
-        onFirstPage=lambda c, d: _page_decorations(c, d, data),
-        onLaterPages=lambda c, d: _page_decorations(c, d, data),
         canvasmaker=PageNumCanvas,
     )
 

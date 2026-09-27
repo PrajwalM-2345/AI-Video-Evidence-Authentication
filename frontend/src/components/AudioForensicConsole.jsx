@@ -27,7 +27,7 @@ function VerdictBadge({ verdict, riskScore }) {
   );
 }
 
-export default function AudioForensicConsole({ analysisResult, file, loading }) {
+export default function AudioForensicConsole({ analysisResult, file, loading, audioUrl}) {
   const [playing, setPlaying] = useState(false);
 
   if (loading) {
@@ -83,6 +83,7 @@ export default function AudioForensicConsole({ analysisResult, file, loading }) 
         durationSeconds={duration_seconds}
         playing={playing}
         onTogglePlay={() => setPlaying((p) => !p)}
+        audioUrl={audioUrl}
       />
 
       <AudioTamperTimeline audioTimeline={audio_timeline} />

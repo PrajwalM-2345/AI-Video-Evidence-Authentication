@@ -1,20 +1,7 @@
 // src/components/motion-shim.jsx
-// ============================================================
-// NEW FEATURE — Framer Motion (shim)
-// IMPORTANT CONSTRAINT: this environment's available React
-// library list (recharts, lodash, d3, mathjs, three, etc.) does
-// NOT include framer-motion, and it cannot be installed here.
-// Rather than silently fail at build time, this file provides a
-// drop-in replacement with the same day-to-day API surface:
-//   import { motion, AnimatePresence } from './motion-shim';
-//   <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.4}} />
-// under the hood it uses the native Web Animations API (already
-// available in the browser, zero extra dependency) to interpolate
-// the same kind of props real framer-motion accepts (opacity, x,
-// y, scale, rotate). This is additive only — App.jsx is untouched;
-// use this import path anywhere motion.* / AnimatePresence is
-// wanted going forward.
-// ============================================================
+// Drop-in shim for framer-motion. Provides motion.*, AnimatePresence,
+// and all the useXxx hooks App.jsx imports.
+
 import React, { useEffect, useRef, useState, createContext, useContext } from 'react';
 
 const toTransform = (vals = {}) => {
@@ -26,80 +13,100 @@ const toTransform = (vals = {}) => {
   return parts.length ? parts.join(' ') : undefined;
 };
 
-function useMotionAnimate(ref, initial, animate, transition, exiting, onExitComplete) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const dur = (transition?.duration ?? 0.35) * 1000;
-    const easing = transition?.ease === 'linear' ? 'linear' : 'cubic-bezier(0.22,1,0.36,1)';
-    const delay = (transition?.delay ?? 0) * 1000;
-
-    const from = { opacity: initial?.opacity ?? 1, transform: toTransform(initial) || 'none' };
-    const to = { opacity: animate?.opacity ?? 1, transform: toTransform(animate) || 'none' };
-
-    const anim = el.animate([from, to], { duration: dur, delay, easing, fill: 'both' });
-
-    if (exiting) {
-      anim.onfinish = () => onExitComplete && onExitComplete();
-    }
-
-    return () => anim.cancel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(animate), exiting]);
-}
-
 function makeMotionComponent(tag) {
-  return function MotionTag({ initial, animate, exit, transition, whileHover, whileTap, className, style, children, onClick, ...rest }) {
-    const ref = useRef(null);
-    const [exiting, setExiting] = useState(false);
-    const exitCtx = useContext(ExitContext);
-
-    useMotionAnimate(ref, initial, exiting ? exit : animate, transition, exiting, exitCtx?.onDone);
-
-    const hoverHandlers = whileHover
-      ? {
-          onMouseEnter: (e) => {
-            if (ref.current) Object.assign(ref.current.style, { transform: toTransform(whileHover), transition: 'transform 0.2s ease' });
-          },
-          onMouseLeave: (e) => {
-            if (ref.current) Object.assign(ref.current.style, { transform: toTransform(animate) || 'none' });
-          },
-        }
-      : {};
-
-    const tapHandlers = whileTap
-      ? {
-          onMouseDown: () => { if (ref.current) ref.current.style.transform = toTransform(whileTap); },
-          onMouseUp: () => { if (ref.current) ref.current.style.transform = toTransform(animate) || 'none'; },
-        }
-      : {};
-
-    useEffect(() => {
-      if (exitCtx) setExiting(true);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [exitCtx?.leaving]);
-
+  return function MotionComponent({
+    children,
+    layoutId,
+    initial,
+    animate,
+    exit,
+    transition,
+    whileHover,
+    whileTap,
+    variants,
+    layout,
+    ...rest
+  }) {
     const Tag = tag;
-    return (
-      <Tag ref={ref} className={className} style={{ ...style, opacity: initial?.opacity ?? 1 }} onClick={onClick} {...hoverHandlers} {...tapHandlers} {...rest}>
-        {children}
-      </Tag>
-    );
+    return <Tag {...rest}>{children}</Tag>;
   };
 }
 
-export const motion = new Proxy({}, { get: (_, tag) => makeMotionComponent(tag) });
+export const motion = new Proxy({}, {
+  get: (_, tag) => makeMotionComponent(tag),
+});
 
 const ExitContext = createContext(null);
 
 export function AnimatePresence({ children }) {
-  // Minimal viable version: renders children directly. Exit animations
-  // fire via the ExitContext when a child unmounts naturally in React's
-  // lifecycle is non-trivial without the real library's fiber hooks, so
-  // this shim focuses on covering enter/hover/tap — the majority of
-  // everyday usage — and gracefully no-ops extra exit choreography.
   return <>{children}</>;
+}
+
+// ---------------- Hooks ----------------
+
+export function useScroll(options = {}) {
+  const [scrollY, setScrollY] = useState(0);
+  useEffect(() => {
+    const handleScroll = () => setScrollY(window.scrollY || 0);
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  return { scrollY, scrollYProgress: { get: () => 0, set: () => {} } };
+}
+
+export function useVelocity() {
+  return { get: () => 0, set: () => {} };
+}
+
+export function useDragControls() {
+  return {
+    start: () => {},
+    stop: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+}
+
+export function useMotionValue(initial) {
+  return { get: () => initial, set: () => {} };
+}
+
+export function useTransform(source, fn) {
+  return { get: () => 0, set: () => {} };
+}
+
+export function useSpring(initial) {
+  return { get: () => initial, set: () => {} };
+}
+
+export function useInView() {
+  return true;
+}
+
+export function useAnimationFrame(cb) {
+  if (typeof cb !== 'function') return;
+  let id;
+  let last = performance.now();
+  const loop = (t) => {
+    cb(t - last);
+    last = t;
+    id = requestAnimationFrame(loop);
+  };
+  id = requestAnimationFrame(loop);
+  return () => cancelAnimationFrame(id);
+}
+
+export function useMotionTemplate() {
+  return '';
+}
+
+export function useReducedMotion() {
+  return false;
+}
+
+export function useWillChange() {
+  return 'auto';
 }
 
 export default { motion, AnimatePresence };

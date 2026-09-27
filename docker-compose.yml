@@ -51,7 +51,7 @@ services:
       - ./models_weights:/app/models_weights
       - ./cloud_storage:/app/cloud_storage
       - torch_cache:/root/.cache
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --limit-concurrency 8 --timeout-keep-alive 5
     depends_on:
       - postgres_db
       - qdrant_db
@@ -60,6 +60,9 @@ services:
     environment:
       DATABASE_URL: postgresql://admin:supersecretpassword@postgres_db:5432/forensic_db
       QDRANT_URL: http://qdrant_db:6333
+    mem_limit: 3g
+    mem_reservation: 2g
+    shm_size: 1g
     networks:
       - forensic_network
 

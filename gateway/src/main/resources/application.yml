@@ -5,6 +5,8 @@ spring:
   application:
     name: phoenix-forensic-gateway
 
+
+
   codec:
     max-in-memory-size: 1GB
 
@@ -23,6 +25,9 @@ spring:
           "[/**]":
             allowedOrigins:
               - "http://localhost:5173"
+              - "http://localhost:5174"
+              - "http://127.0.0.1:5173"
+              - "http://127.0.0.1:5174"
             allowedMethods:
               - GET
               - POST
@@ -34,7 +39,7 @@ spring:
 
       httpclient:
         connect-timeout: 10000
-        response-timeout: 300s
+        response-timeout: 3600s
 
       routes:
         - id: fastapi_analysis_route
@@ -55,7 +60,7 @@ spring:
         - id: dashboard_route
           uri: http://ai-backend:8000
           predicates:
-            - Path=/dashboard/**
+            - Path=/dashboard/**,/frame/**
 
         - id: model_metrics_route
           uri: http://ai-backend:8000

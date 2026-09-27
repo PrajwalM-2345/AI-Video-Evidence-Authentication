@@ -22,9 +22,12 @@ class AudioForensicEngine:
         })
 
         weights = torch.load(
-            "/app/models_weights/aasist/AASIST.pth",
+            "/app/models_weights/aasist_finetuned.pth",
             map_location="cpu"
         )
+
+        if isinstance(weights, dict) and "model" in weights:
+            weights = weights["model"]
 
         self.model.load_state_dict(weights)
 

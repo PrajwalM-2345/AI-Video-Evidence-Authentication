@@ -52,7 +52,7 @@ function RouterBadge({ kind }) {
   );
 }
 
-export default function EvidenceTypeRouter({ file, analysisResult, loading }) {
+export default function EvidenceTypeRouter({ file, analysisResult, loading, audioUrl}) {
   const kind = useMemo(() => resolveMediaKind(file, analysisResult), [file, analysisResult]);
 
   if (!analysisResult) return null;
@@ -61,7 +61,7 @@ export default function EvidenceTypeRouter({ file, analysisResult, loading }) {
     <div className="tab-transition">
       <RouterBadge kind={kind} />
 
-      {kind === 'audio' && <AudioForensicConsole analysisResult={analysisResult} file={file} loading={loading} />}
+      {kind === 'audio' && <AudioForensicConsole analysisResult={analysisResult} file={file} loading={loading}  audioUrl={audioUrl} />}
 
       {kind === 'video' && (
         <VideoTamperTimeline

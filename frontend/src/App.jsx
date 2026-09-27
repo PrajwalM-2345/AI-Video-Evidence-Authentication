@@ -1,41 +1,260 @@
 // src/App.jsx
 import React, { useState, useRef, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
 import axios from 'axios';
-import { 
-  Shield, Upload, Search, Cpu, Database, CheckCircle, AlertTriangle, FileCode, MessageSquare, 
-  Send, Zap, Film, Briefcase, PlusCircle, Clock, LayoutGrid, Layers, BarChart3, Activity, 
-  Fingerprint, Lock, Radio, ScanLine, ChevronRight, Sparkles, TrendingUp, ShieldCheck, ShieldAlert, 
-  Hexagon, Sun, Moon, Bell, BellRing, History, X, SlidersHorizontal, ArrowUpDown, Waves, Orbit, 
-  Crosshair, Radar, GitBranch, Aperture, AudioWaveform, Globe, Terminal, Server, Network, 
-  DatabaseZap, Eye, EyeOff, Maximize2, Minimize2, Download, ExternalLink, RefreshCw, 
-  Command, Cpu as CpuIcon, HardDrive, MemoryStick, Gauge, Thermometer, Wind, CloudLightning, 
-  CircuitBoard, Binary, Boxes, Container, GitCommit, GitPullRequest, Link2, Unlink, 
-  ShieldQuestion, ShieldX, ShieldMinus, Fingerprint as FingerprintIcon, KeyRound, 
-  LockKeyhole, LockOpen, BadgeCheck, BadgeAlert, BadgeX, BadgeInfo, BadgeHelp, 
-  CircleDot, CircleDashed, CircleEllipsis, CircleSlash, CircleCheck, CircleAlert, CircleX,
-  Sparkle, Star, StarHalf, Heart, Flame, Rocket, Target, Crosshair as CrosshairIcon,
-  Compass, Map, MapPin, Navigation, LocateFixed, Locate, LocateOff, Magnet, Anchor,
-  Satellite, SatelliteDish, TowerControl, Broadcast, Signal, SignalHigh, SignalLow, SignalMedium,
-  Wifi, WifiOff, Bluetooth, BluetoothConnected, BluetoothOff, Cast, CastIcon, MonitorPlay,
-  MonitorSmartphone, Smartphone, Tablet, Laptop, Laptop2, PcCase, Cpu as CpuChip,
-  HardDriveDownload, HardDriveUpload, DatabaseBackup, DatabaseRestore, Archive, ArchiveRestore,
-  FolderOpen, FolderClosed, FolderLock, FolderSearch, FolderSync, FolderTree, FileSearch,
-  FileCheck, FileX, FileWarning, FilePlus, FileMinus, FileText, FileJson, FileCode2,
-  Braces, Brackets, Code2, TerminalSquare, SquareCode, ScrollText, TextCursorInput,
-  MousePointerClick, MousePointer2, Pointer, Hand, Grab, Move, MoveDiagonal, MoveHorizontal,
-  MoveVertical, ZoomIn, ZoomOut, RotateCw, RotateCcw, FlipHorizontal, FlipVertical,
-  Crop, Scissors, Copy, Clipboard, ClipboardCheck, ClipboardCopy, ClipboardList, ClipboardPaste,
-  ClipboardType, ClipboardX, ClipboardPlus, ClipboardMinus, ListChecks, ListTodo, ListTree,
-  ListPlus, ListMinus, ListOrdered, ListFilter, ListMusic, ListVideo, ListEnd, ListStart,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify, AlignVerticalJustifyCenter, AlignHorizontalJustifyCenter,
-  Bold, Italic, Underline, Strikethrough, Highlighter, PenLine, PenTool, Pencil, Eraser,
-  Paintbrush, PaintBucket, Palette, SwatchBook, Droplet, Droplets, FlaskConical, TestTube,
-  TestTubes, Beaker, Microscope, Atom, Orbit as OrbitIcon, Rocket as RocketIcon, SatelliteDish as SatelliteDishIcon,
-  Antenna, RadioTower, RadioReceiver, AudioLines, AudioWaveform as AudioWaveformIcon, AudioWaveform2,
-  Speaker, Headphones, Mic, Mic2, Podcast, Disc, Disc3, Album, Music2, Music3, Music4,
-  Play, Pause, SkipForward, SkipBack, StepForward, StepBack, FastForward, Rewind,
-  Volume1, Volume2, VolumeX, Volume, Captions, CaptionsOff, Subtitles, Languages
-} from 'lucide-react';
+import {
+  Shield,
+  Upload,
+  Search,
+  Cpu,
+  Database,
+  CheckCircle,
+  AlertTriangle,
+  FileCode,
+  MessageSquare,
+  Send,
+  Zap,
+  Film,
+  Briefcase,
+  PlusCircle,
+  Clock,
+  LayoutGrid,
+  Layers,
+  BarChart3,
+  Activity,
+  Fingerprint,
+  Lock,
+  Radio,
+  ScanLine,
+  ChevronRight,
+  Sparkles,
+  TrendingUp,
+  ShieldCheck,
+  ShieldAlert,
+  Hexagon,
+  Sun,
+  Moon,
+  Bell,
+  BellRing,
+  History,
+  X,
+  SlidersHorizontal,
+  ArrowUpDown,
+  Waves,
+  Orbit,
+  Crosshair,
+  Radar,
+  GitBranch,
+  Aperture,
+  AudioWaveform,
+  Globe,
+  Terminal,
+  Server,
+  Network,
+  DatabaseZap,
+  Eye,
+  EyeOff,
+  Maximize2,
+  Minimize2,
+  Download,
+  ExternalLink,
+  RefreshCw,
+  Command,
+  HardDrive,
+  MemoryStick,
+  Gauge,
+  Thermometer,
+  Wind,
+  CloudLightning,
+  CircuitBoard,
+  Binary,
+  Boxes,
+  Container,
+  GitCommit,
+  GitPullRequest,
+  Link2,
+  Unlink,
+  ShieldQuestion,
+  ShieldX,
+  ShieldMinus,
+  KeyRound,
+  LockKeyhole,
+  LockOpen,
+  BadgeCheck,
+  BadgeAlert,
+  BadgeX,
+  BadgeInfo,
+  BadgeHelp,
+  CircleDot,
+  CircleDashed,
+  CircleEllipsis,
+  CircleSlash,
+  CircleCheck,
+  CircleAlert,
+  CircleX,
+  Sparkle,
+  Star,
+  StarHalf,
+  Heart,
+  Flame,
+  Rocket,
+  Target,
+  Compass,
+  Map,
+  MapPin,
+  Navigation,
+  LocateFixed,
+  Locate,
+  LocateOff,
+  Magnet,
+  Anchor,
+  Satellite,
+  SatelliteDish,
+  TowerControl,
+  Signal,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
+  Wifi,
+  WifiOff,
+  Bluetooth,
+  BluetoothConnected,
+  BluetoothOff,
+  Cast,
+  CastIcon,
+  MonitorPlay,
+  MonitorSmartphone,
+  Smartphone,
+  Tablet,
+  Laptop,
+  Laptop2,
+  PcCase,
+  HardDriveDownload,
+  HardDriveUpload,
+  DatabaseBackup,
+  Archive,
+  ArchiveRestore,
+  FolderOpen,
+  FolderClosed,
+  FolderLock,
+  FolderSearch,
+  FolderSync,
+  FolderTree,
+  FileSearch,
+  FileCheck,
+  FileX,
+  FileWarning,
+  FilePlus,
+  FileMinus,
+  FileText,
+  FileJson,
+  FileCode2,
+  Braces,
+  Brackets,
+  Code2,
+  TerminalSquare,
+  SquareCode,
+  ScrollText,
+  TextCursorInput,
+  MousePointerClick,
+  MousePointer2,
+  Pointer,
+  Hand,
+  Grab,
+  Move,
+  MoveDiagonal,
+  MoveHorizontal,
+  MoveVertical,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  RotateCcw,
+  FlipHorizontal,
+  FlipVertical,
+  Crop,
+  Scissors,
+  Copy,
+  Clipboard,
+  ClipboardCheck,
+  ClipboardCopy,
+  ClipboardList,
+  ClipboardPaste,
+  ClipboardType,
+  ClipboardX,
+  ClipboardPlus,
+  ClipboardMinus,
+  ListChecks,
+  ListTodo,
+  ListTree,
+  ListPlus,
+  ListMinus,
+  ListOrdered,
+  ListFilter,
+  ListMusic,
+  ListVideo,
+  ListEnd,
+  ListStart,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  AlignVerticalJustifyCenter,
+  AlignHorizontalJustifyCenter,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Highlighter,
+  PenLine,
+  PenTool,
+  Pencil,
+  Eraser,
+  Paintbrush,
+  PaintBucket,
+  Palette,
+  SwatchBook,
+  Droplet,
+  Droplets,
+  FlaskConical,
+  TestTube,
+  TestTubes,
+  Beaker,
+  Microscope,
+  Atom,
+  Antenna,
+  RadioTower,
+  RadioReceiver,
+  AudioLines,
+  Speaker,
+  Headphones,
+  Mic,
+  Mic2,
+  Podcast,
+  Disc,
+  Disc3,
+  Album,
+  Music2,
+  Music3,
+  Music4,
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  StepForward,
+  StepBack,
+  FastForward,
+  Rewind,
+  Volume1,
+  Volume2,
+  VolumeX,
+  Volume,
+  Captions,
+  CaptionsOff,
+  Subtitles,
+  Languages,
+} from 'lucide-react';;
+
+// Aliases for icons not present in this lucide-react version
+import { Cpu as CpuChip, Radio as Broadcast, DatabaseBackup as DatabaseRestore } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, 
   AreaChart, Area, RadialBarChart, RadialBar, PolarAngleAxis, ComposedChart, Scatter, 
@@ -49,6 +268,10 @@ import NeuralAICore from './components/NeuralAICore';
 import ExecutiveCommandCenter from './components/ExecutiveCommandCenter';
 import CinematicBackground from './components/CinematicBackground';
 import TimelineScrubber from './components/TimelineScrubber';
+import TamperIntensityBar from './components/TamperIntensityBar';
+import HashFingerprint from './components/HashFingerprint';
+import AnchorChainMini from './components/AnchorChainMini';
+import ModalityGauges from './components/ModalityGauges';
 import './components/premium-typography.css';
 import InvestigationCards from './components/InvestigationCards';
 import EnhancedHeatmap from './components/EnhancedHeatmap';
@@ -1416,6 +1639,17 @@ function BlockchainVisualization({ ledgerResult, searchHash }) {
 // ============================================================
 
 export default function App() {
+
+  // navItems hoisted to fix TDZ (use-before-declare)
+  const navItems = [
+    { id: 'executive', label: 'Dashboard', icon: BarChart3, shortcut: '1', description: 'Command overview' },
+    { id: 'upload', label: 'Video Audit', icon: ScanLine, shortcut: '2', description: 'Forensic analysis' },
+    { id: 'investigation', label: 'Investigation', icon: Cpu, shortcut: '3', description: 'Model calibration' },
+    { id: 'cases', label: 'Cases', icon: Briefcase, shortcut: '4', description: 'Case management' },
+    { id: 'ledger', label: 'Ledger', icon: Fingerprint, shortcut: '5', description: 'Blockchain anchors' },
+  ];
+
+  // navItems hoisted here to fix TDZ error (used before declaration)
   useFonts();
 
   // ---------- Core State ----------
@@ -1647,7 +1881,7 @@ export default function App() {
   const fetchExecutiveAnalyticsMetrics = async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/dashboard/summary`, {
-        timeout: 10000,
+        timeout: 3600000,
       });
       setExecSummary(response.data);
       setLastUpdated(new Date());
@@ -1666,8 +1900,8 @@ export default function App() {
   
   const fetchModelMetrics = async () => {
     try {
-      const response = await axios.get("http://localhost:8000/model-metrics", {
-        timeout: 10000,
+      const response = await axios.get(`${BACKEND_URL}/model-metrics`, {
+        timeout: 3600000,
       });
       setModelMetrics([
         { name: 'ViT', score: response.data.vit_accuracy || 0 },
@@ -1690,7 +1924,7 @@ export default function App() {
   const fetchSystemHealthMetrics = async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/system/health`, {
-        timeout: 5000,
+        timeout: 3600000,
       });
       setSystemHealth(response.data);
     } catch (err) {
@@ -1711,7 +1945,7 @@ export default function App() {
     setFeedbackError('');
     try {
       const response = await axios.get(`${BACKEND_URL}/feedback/history`, {
-        timeout: 10000,
+        timeout: 3600000,
       });
       setFeedbackHistory(response.data);
       setLastUpdated(new Date());
@@ -1727,7 +1961,7 @@ export default function App() {
     setCasesLoading(true);
     try {
       const response = await axios.get(`${BACKEND_URL}/cases/`, {
-        timeout: 10000,
+        timeout: 3600000,
       });
       setCasesList(response.data);
     } catch (err) {
@@ -1796,7 +2030,7 @@ export default function App() {
         is_correct: isCorrect,
         session_id: sessionId,
       }, {
-        timeout: 10000,
+        timeout: 3600000,
       });
       
       setFeedbackSuccess(`Feedback logged — calibration data recorded. ${isCorrect ? 'Verdict confirmed as correct.' : 'Verdict flagged as incorrect.'}`);
@@ -1828,7 +2062,7 @@ export default function App() {
         assigned_examiner: newCaseExaminer.trim(),
         created_by: sessionId,
       }, {
-        timeout: 10000,
+        timeout: 3600000,
       });
       
       setCaseSuccessMsg(`Case [${newCaseId}] created. You can now attach video evidence to this matter.`);
@@ -1930,7 +2164,7 @@ export default function App() {
     try {
       const response = await axios.post(requestUrl, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 300000, // 5 minutes
+        timeout: 3600000, // 5 minutes
         onUploadProgress: (progressEvent) => {
           // Could update upload progress separately
         },
@@ -1983,7 +2217,7 @@ export default function App() {
     
     try {
       const response = await axios.get(`${BACKEND_URL}/verify-hash/${encodeURIComponent(cleanHash)}`, {
-        timeout: 15000,
+        timeout: 3600000,
       });
       
       setLedgerResult(response.data);
@@ -2021,7 +2255,7 @@ export default function App() {
     try {
       const response = await axios.get(`${BACKEND_URL}/download-report/${encodeURIComponent(cleanHash)}`, { 
         responseType: 'blob',
-        timeout: 60000,
+        timeout: 3600000,
       });
       
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
@@ -2056,15 +2290,123 @@ export default function App() {
     }
   };
   
-  const sendChat = async (text) => {
+    const handleChatIntent = (text) => {
+    const t = text.trim().toLowerCase();
+
+    const navMap = [
+      { keys: ['open dashboard', 'show dashboard', 'go to dashboard', 'dashboard section'], tab: 'executive', label: 'Dashboard' },
+      { keys: ['open video audit', 'show video audit', 'video audit', 'audit section'], tab: 'upload', label: 'Video Audit' },
+      { keys: ['open investigation', 'show investigation', 'investigation section'], tab: 'investigation', label: 'Investigation' },
+      { keys: ['open cases', 'show cases', 'cases section'], tab: 'cases', label: 'Cases' },
+      { keys: ['open ledger', 'show ledger', 'blockchain proof', 'ledger section'], tab: 'ledger', label: 'Ledger' },
+    ];
+    for (const item of navMap) {
+      if (item.keys.some((k) => t.includes(k))) {
+        setActiveTab(item.tab);
+        return { handled: true, response: `Navigating to the ${item.label} section.` };
+      }
+    }
+
+    if (t.includes('upload video') || t.includes('upload file') || t.includes('upload evidence') || t.includes('browse files') || t.includes('choose file') || t.includes('open finder')) {
+      setActiveTab('upload');
+      setTimeout(() => {
+        const input = document.querySelector('input[type="file"]');
+        if (input) input.click();
+      }, 250);
+      return { handled: true, response: 'Opening the file picker. Select the file you want audited.' };
+    }
+
+    if ((t.includes('download') && (t.includes('report') || t.includes('pdf'))) || t.includes('export report')) {
+      const hash = analysisResult?.hash_verification?.sha256_hash || searchHash.trim();
+      if (!hash) {
+        return { handled: true, response: 'No analysed file is loaded. Upload a video first, then ask me to download the report.' };
+      }
+      downloadForensicReport(hash);
+      return { handled: true, response: `Downloading the forensic PDF for ${hash.substring(0, 12)}…` };
+    }
+
+    if (t.includes('light mode') || t.includes('light theme')) {
+      if (theme !== 'light') toggleTheme();
+      return { handled: true, response: 'Switching to light mode.' };
+    }
+    if (t.includes('dark mode') || t.includes('dark theme')) {
+      if (theme !== 'dark') toggleTheme();
+      return { handled: true, response: 'Switching to dark mode.' };
+    }
+
+    if (t.includes('fullscreen') || t.includes('full screen')) {
+      try {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.();
+        } else {
+          document.exitFullscreen?.();
+        }
+      } catch (e) {}
+      return { handled: true, response: 'Toggling fullscreen.' };
+    }
+
+    if (t.includes('api doc') || t.includes('open docs') || t.includes('swagger')) {
+      window.open('http://localhost:8000/docs', '_blank');
+      return { handled: true, response: 'Opening the API documentation in a new tab.' };
+    }
+
+    if (t.includes('show notification') || t.includes('open notification') || t.includes('open alert')) {
+      setPanelOpen(true);
+      return { handled: true, response: 'Opening the alert feed.' };
+    }
+    if (t.includes('clear notification') || t.includes('clear alert')) {
+      clearAlerts();
+      return { handled: true, response: 'All alerts cleared.' };
+    }
+
+    if (t.includes('create case') || t.includes('new case')) {
+      setActiveTab('cases');
+      return { handled: true, response: 'Switched to Case Management.' };
+    }
+
+    if (t === 'clear chat' || t.includes('reset chat')) {
+      setChatHistory([{ role: 'assistant', text: 'Chat cleared.', timestamp: new Date() }]);
+      return { handled: true, response: null };
+    }
+
+    if (t === 'help' || t.includes('what can you do') || t.includes('show commands')) {
+      return {
+        handled: true,
+        response: 'Commands:\n\nNAVIGATION: open dashboard / open video audit / open ledger / open cases / open investigation\n\nUPLOAD: upload video / browse files\n\nREPORT: download report / export pdf\n\nUI: light mode / dark mode / fullscreen / open api docs\n\nALERTS: show notifications / clear notifications\n\nSYSTEM: create case / clear chat / help\n\nAnything else goes to the AI.'
+      };
+    }
+
+    return { handled: false };
+  };
+
+const sendChat = async (text) => {
+
+    const cleanText = (text || '').trim();
+    if (!cleanText) return;
+
+    // Add user message
+    setChatHistory((prev) => [...prev, { role: 'user', text: cleanText, timestamp: new Date() }]);
+
+    // Try intent handler FIRST
+    const intent = handleChatIntent(cleanText);
+    if (intent.handled) {
+      if (intent.response) {
+        setChatHistory((prev) => [...prev, {
+          role: 'assistant',
+          text: intent.response,
+          timestamp: new Date(),
+        }]);
+      }
+      return;
+    }
+
+    // Fall through to LLM only if intent not handled
+
     const activeHash = analysisResult?.hash_verification?.sha256_hash || searchHash.trim();
     if (!activeHash) {
       alert("Upload a video or look up a hash first so I have evidence to reference.");
       return;
     }
-    
-    const cleanText = text.trim();
-    if (!cleanText) return;
     
     // Add user message
     setChatHistory((prev) => [...prev, { role: 'user', text: cleanText, timestamp: new Date() }]);
@@ -2088,7 +2430,7 @@ export default function App() {
         history: formattedHistory,
         session_id: sessionId,
       }, {
-        timeout: 30000,
+        timeout: 3600000,
       });
       
       setChatHistory((prev) => [...prev, { 
@@ -2234,13 +2576,6 @@ export default function App() {
     return Math.ceil(rows.length / feedbackPageSize);
   }, [feedbackHistory, feedbackSearchQuery, feedbackFilterVerdict, feedbackPageSize]);
   
-  const navItems = [
-    { id: 'executive', label: 'Dashboard', icon: BarChart3, shortcut: '1', description: 'Command overview' },
-    { id: 'upload', label: 'Video Audit', icon: ScanLine, shortcut: '2', description: 'Forensic analysis' },
-    { id: 'investigation', label: 'Investigation', icon: Cpu, shortcut: '3', description: 'Model calibration' },
-    { id: 'cases', label: 'Cases', icon: Briefcase, shortcut: '4', description: 'Case management' },
-    { id: 'ledger', label: 'Ledger', icon: Fingerprint, shortcut: '5', description: 'Blockchain anchors' },
-  ];
   
   const shellBg = isLight
     ? 'radial-gradient(ellipse 90% 60% at 50% -10%, #F6F7FB 0%, #E9ECF2 55%, #E2E5ED 100%)'
@@ -2278,6 +2613,15 @@ export default function App() {
     >
       {/* Global Styles */}
       <style>{`
+        .right-column-sticky {
+          position: sticky;
+          top: 96px;
+          align-self: start;
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
         /* ============ KEYFRAMES ============ */
         @keyframes scan-sweep {
           0% { transform: translateY(-100%); opacity: 0; }
@@ -2824,7 +3168,7 @@ export default function App() {
       {/* ============ MAIN CONTENT ============ */}
       <main 
         ref={mainContentRef}
-        className="relative z-10 max-w-[1600px] mx-auto p-5 lg:p-8 grid grid-cols-1 xl:grid-cols-3 gap-6"
+        className="relative z-10 max-w-[1600px] mx-auto p-5 lg:p-8 grid grid-cols-1 xl:grid-cols-3 gap-6 items-start"
       >
         {/* Left Column - Main Content */}
         <div className="xl:col-span-2 space-y-6">
@@ -3070,7 +3414,7 @@ export default function App() {
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     {[
-                      { label: 'CPU Usage', value: `${systemHealth.cpu}%`, icon: CpuChip, color: '#4FD1E8' },
+                      { label: 'CPU Usage', value: `${systemHealth.cpu}%`, icon: Cpu, color: '#4FD1E8' },
                       { label: 'RAM Allocation', value: `${systemHealth.ram}%`, icon: MemoryStick, color: '#8B93FF' },
                       { label: 'Acceleration', value: systemHealth.gpu, icon: HardDrive, color: '#F5A623', small: true },
                       { label: 'Throughput', value: `${systemHealth.fps} FPS`, icon: Gauge, color: '#34E5A8' },
@@ -3337,6 +3681,13 @@ export default function App() {
                   
                   {/* Unified Forensic Evidence Panel */}
                   <UnifiedEvidenceConsole file={file} analysisResult={analysisResult} />
+
+                  <ModalityGauges
+                    videoConfidence={analysisResult.video?.confidence_percent}
+                    audioConfidence={analysisResult.audio?.confidence_percent}
+                    imageConfidence={analysisResult.whole_image?.fake_probability_percent}
+                    verdictIsFake={verdictIsFake}
+                  />
                   
                   {/* Multimodal Media Type Detection Router */}
                   <EvidenceTypeRouter file={file} analysisResult={analysisResult} loading={loading} />
@@ -3406,6 +3757,54 @@ export default function App() {
                           analysisResult.audio_timeline
                         }
                       />
+                      <TamperIntensityBar
+                        timeline={analysisResult.timeline || analysisResult.audio_timeline || []}
+                      />
+                      {/* Beautiful temporal motion graph */}
+                      <div className="mt-4 h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart
+                            data={(analysisResult.timeline || analysisResult.audio_timeline || []).map((t, i) => ({
+                              i,
+                              time: t.timestamp,
+                              prob: t.tampering_probability,
+                            }))}
+                            margin={{ top: 10, right: 20, bottom: 0, left: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="tamperFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#FF4757" stopOpacity={0.55} />
+                                <stop offset="50%" stopColor="#F5A623" stopOpacity={0.25} />
+                                <stop offset="100%" stopColor="#34E5A8" stopOpacity={0.05} />
+                              </linearGradient>
+                              <linearGradient id="tamperLine" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#34E5A8" />
+                                <stop offset="50%" stopColor="#F5A623" />
+                                <stop offset="100%" stopColor="#FF4757" />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid stroke="#1B2130" strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="time" stroke="#4A5568" fontSize={9} tickLine={false} />
+                            <YAxis domain={[0, 100]} stroke="#4A5568" fontSize={9} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: '#0A0E16', borderColor: '#1B2130', borderRadius: 8, fontSize: 11 }}
+                              formatter={(v) => [`${Number(v).toFixed(2)}%`, 'Tamper']}
+                            />
+                            <ReferenceLine y={70} stroke="#FF4757" strokeDasharray="4 4" label={{ value: "Tamper threshold 70%", fill: "#FF4757", fontSize: 9 }} />
+                            <Area type="monotone" dataKey="prob" fill="url(#tamperFill)" stroke="none" />
+                            <Line
+                              type="monotone"
+                              dataKey="prob"
+                              stroke="url(#tamperLine)"
+                              strokeWidth={2.5}
+                              dot={{ r: 4, fill: "#FF4757", stroke: "#fff", strokeWidth: 1 }}
+                              activeDot={{ r: 7, fill: "#FF4757", stroke: "#fff", strokeWidth: 2 }}
+                              animationDuration={1800}
+                              animationEasing="ease-out"
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
                       <h4 className={`text-[11px] mt-4 mb-2 font-semibold font-mono uppercase tracking-wide ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         Tampering Distribution
                       </h4>
@@ -3500,7 +3899,7 @@ export default function App() {
                               <div className="space-y-1">
                                 <span className="text-[9px] font-mono text-slate-600 block uppercase">Original</span>
                                 <img 
-                                  src={`data:image/jpeg;base64,${frame.original_frame_b64}`} 
+                                  src={frame.original_frame_b64 ? `data:image/jpeg;base64,${frame.original_frame_b64}` : `${BACKEND_URL}${frame.original_url}`} 
                                   alt={`Original Frame ${frame.frame_id}`} 
                                   className="w-full aspect-[4/3] object-cover border-2 border-[#FF4757]/40 block rounded-xl shadow-lg shadow-black/30"
                                   loading="lazy"
@@ -3509,7 +3908,7 @@ export default function App() {
                               <div className="space-y-1">
                                 <span className="text-[9px] font-mono text-[#4FD1E8] block uppercase">Heatmap</span>
                                 <img 
-                                  src={`data:image/jpeg;base64,${frame.heatmap_frame_b64}`} 
+                                  src={frame.heatmap_frame_b64 ? `data:image/jpeg;base64,${frame.heatmap_frame_b64}` : `${BACKEND_URL}${frame.heatmap_url}`} 
                                   alt={`Heatmap Frame ${frame.frame_id}`} 
                                   className="w-full aspect-[4/3] object-cover border-2 border-[#4FD1E8]/40 block rounded-xl shadow-lg shadow-black/30"
                                   loading="lazy"
@@ -3563,6 +3962,8 @@ export default function App() {
                     downloading={downloadingReport}
                     onDownload={() => downloadForensicReport(analysisResult.hash_verification?.sha256_hash)}
                   />
+
+                  <HashFingerprint hash={analysisResult.hash_verification?.sha256_hash} />
                   
                   {/* Export Report Button */}
                   <button 
@@ -4033,6 +4434,15 @@ export default function App() {
                 </Reticle>
               )}
               
+              <AnchorChainMini
+                anchors={
+                  ledgerResult?.blockchain_ledger
+                    ? [ledgerResult.blockchain_ledger]
+                    : []
+                }
+                currentHash={searchHash}
+              />
+
               <BlockchainProof 
                 ledgerResult={ledgerResult} 
                 searchHash={analysisResult?.hash_verification?.sha256_hash || searchHash} 
@@ -4042,10 +4452,10 @@ export default function App() {
         </div>
         
         {/* Right Column - Assistant Panel */}
-        <div className="space-y-6">
+        <div className="space-y-6 right-column-sticky">
           <Reticle 
             color="#4FD1E8" 
-            className={`glass-surface rounded-[28px] p-5 flex flex-col h-[600px] sticky top-24 shadow-2xl ${
+            className={`glass-surface rounded-[28px] p-5 flex flex-col h-[600px] overflow-hidden shadow-2xl ${
               isLight ? 'shadow-slate-300/50' : 'shadow-black/50'
             }`}
           >
@@ -4069,7 +4479,7 @@ export default function App() {
             </div>
             
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs custom-scrollbar">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 text-xs custom-scrollbar">
               {chatHistory.map((msg, idx) => (
                 <div 
                   key={idx} 
@@ -4155,7 +4565,7 @@ export default function App() {
           </Reticle>
           
           {/* Quick Stats Panel */}
-          <div className="glass-surface rounded-[24px] p-4 space-y-3 hidden xl:block">
+          <div className="glass-surface rounded-[24px] p-4 space-y-3 mt-2">
             <h3 className={`text-[11px] font-semibold font-mono uppercase tracking-wide flex items-center gap-1.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               <Activity size={12} className="text-[#8B93FF]" /> Session Stats
             </h3>
